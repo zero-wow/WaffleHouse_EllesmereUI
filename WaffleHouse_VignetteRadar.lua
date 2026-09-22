@@ -591,21 +591,18 @@ local function UpdateLauncherSweep(frame, elapsed)
     end
 
     local pulse = 0.5 + (0.5 * math.sin(frame._animationTime * 2.0))
-    local haloAlpha
-    if frame._pressed then
-        haloAlpha = 0.20
-    elseif frame._hovered then
-        haloAlpha = 0.15
-    elseif (frame.detected or 0) > 0 then
-        haloAlpha = 0.065 + (pulse * 0.035)
-    else
-        haloAlpha = active and 0.035 or 0.015
-    end
-    frame.halo:SetAlpha(haloAlpha)
     frame.bezel:SetShown(active)
     frame.closed:SetShown(not active)
     local stateTexture = active and frame.bezel or frame.closed
-    stateTexture:SetAlpha(frame._pressed and 0.78 or (frame._hovered and 1 or 0.92))
+    local stateAlpha = 0.92
+    if frame._pressed then
+        stateAlpha = 0.78
+    elseif frame._hovered then
+        stateAlpha = 1
+    elseif (frame.detected or 0) > 0 then
+        stateAlpha = 0.93 + (pulse * 0.02)
+    end
+    stateTexture:SetAlpha(stateAlpha)
     frame.face:SetVertexColor(frame._pressed and 0.01 or 0.012, frame._pressed and 0.035 or 0.046,
         frame._pressed and 0.038 or 0.052, 0.98)
 
@@ -683,16 +680,6 @@ EnsureLauncher = function()
         type(position) == "table" and tonumber(position.x) or 30,
         type(position) == "table" and tonumber(position.y) or -170)
 
-    launcher.shadow = launcher:CreateTexture(nil, "BACKGROUND")
-    launcher.shadow:SetSize(LAUNCHER_SIZE - 2, LAUNCHER_SIZE - 2)
-    launcher.shadow:SetPoint("CENTER", 1, -1)
-    launcher.shadow:SetTexture(CIRCLE_TEXTURE)
-    launcher.shadow:SetVertexColor(0, 0, 0, 0.58)
-    launcher.halo = launcher:CreateTexture(nil, "BACKGROUND", nil, 1)
-    launcher.halo:SetSize(LAUNCHER_SIZE - 2, LAUNCHER_SIZE - 2)
-    launcher.halo:SetPoint("CENTER")
-    launcher.halo:SetTexture(CIRCLE_TEXTURE)
-    launcher.halo:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
     launcher.face = launcher:CreateTexture(nil, "BORDER")
     launcher.face:SetSize(29, 29)
     launcher.face:SetPoint("CENTER")

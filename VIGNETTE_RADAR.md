@@ -22,9 +22,9 @@ maintain a rare database, or infer coordinates that the game has not supplied.
 - Drag the header to move the full panel. The separate 44-pixel launcher is
   also draggable. Disabled tracking uses a closed jeweled emblem; enabled
   tracking opens its center into a live 150-yard view with up to five current
-  dots and a restrained sweep. Detections use a slow, low-amplitude glow
-  instead of flashing the face. Left click it to show or tuck away the panel;
-  right click it to toggle preview.
+  dots and a restrained sweep. Detections use a slow, two-percent bezel
+  shimmer instead of flashing the face or drawing an outer halo. Left click it
+  to show or tuck away the panel; right click it to toggle preview.
 - `/whradar` shows or tucks away the panel, `/whradar preview` toggles sample
   layout mode, and `/whradar off` disables tracking while leaving the launcher
   available to turn it back on.

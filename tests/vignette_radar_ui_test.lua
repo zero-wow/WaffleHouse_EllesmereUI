@@ -169,8 +169,9 @@ assert(#launcher.ring == 24 and #launcher.sweepLines == 2
 assert(launcher.rangeLabel.text == "150" and #launcher.miniBlips == 5 and launcher.miniBlips[1]:IsShown(),
     "launcher preview must mirror category dots inside its compact field")
 launcher.scripts.OnUpdate(launcher, 0.05)
-assert(launcher.halo.alpha >= 0.065 and launcher.halo.alpha <= 0.10 and launcher.alert == nil,
-    "live detections may use only a soft low-amplitude glow, never a flashing full-face alert")
+assert(launcher.bezel.alpha >= 0.93 and launcher.bezel.alpha <= 0.95
+    and launcher.shadow == nil and launcher.halo == nil and launcher.alert == nil,
+    "detection feedback must stay on the centered bezel without offset circular shadow or alert layers")
 
 panel.legend.scripts.OnClick(panel.legend)
 local legendPanel = assert(_G.WaffleHouseVignetteRadarLegend, "radar header must open its attached legend")
