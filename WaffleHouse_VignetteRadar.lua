@@ -4,12 +4,14 @@ if type(addon) ~= "table" then return end
 local PANEL_W, PANEL_H = 220, 252
 local HEADER_H, FIELD_SIZE = 34, 200
 local FIELD_RADIUS = (FIELD_SIZE / 2) - 9
-local LAUNCHER_SIZE, LAUNCHER_RADIUS = 58, 23
+local LAUNCHER_SIZE, LAUNCHER_RADIUS, LAUNCHER_RANGE = 44, 13, 150
 local UPDATE_SECONDS, RESCAN_SECONDS = 0.05, 1
 local MAX_BLIPS = 32
 local ACCENT = { 0.05, 0.82, 0.62 }
 local RED = { 1, 0.18, 0.14 }
 local CIRCLE_TEXTURE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+local LAUNCHER_BEZEL = "Interface\\AddOns\\WaffleHouse_EllesmereUI\\Media\\vignette-radar-bezel.tga"
+local LAUNCHER_CLOSED = "Interface\\AddOns\\WaffleHouse_EllesmereUI\\Media\\vignette-radar-closed.tga"
 local TWO_PI = math.pi * 2
 local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 local Unpack = unpack or table.unpack
@@ -20,6 +22,14 @@ local manualPanelState
 local activeTargets = {}
 local activeMapID
 local RefreshRadar, ScanVignettes, Render, UpdateLauncher, EnsureLauncher
+local PREVIEW_TARGETS = {
+    { key = "preview-rare", x = 28, y = 52, launcherX = 7, launcherY = 11,
+        distanceFactor = 0.34, name = "Sample rare", category = "rare", sample = true },
+    { key = "preview-treasure", x = -58, y = -14, launcherX = -13, launcherY = -4,
+        distanceFactor = 0.58, name = "Sample treasure", category = "treasure", sample = true },
+    { key = "preview-event", x = 49, y = -45, launcherX = 12, launcherY = -11,
+        distanceFactor = 0.52, name = "Sample event", category = "event", sample = true },
+}
 
 local function Settings()
     local settings = addon.GetSettings and addon.GetSettings() or {}
@@ -236,6 +246,10 @@ local function LegendAPI()
     return type(addon.VignetteRadarLegend) == "table" and addon.VignetteRadarLegend or nil
 end
 
+local function TargetPickerAPI()
+    return type(addon.VignetteRadarTargetPicker) == "table" and addon.VignetteRadarTargetPicker or nil
+end
+
 local function CategoryEnabled(category)
     local legend = LegendAPI()
     if not (legend and type(legend.IsCategoryEnabled) == "function") then return true end
@@ -269,6 +283,71 @@ local function CategoryOpacity(category)
     return highlight and highlight ~= (category or "other") and 0.18 or 1
 end
 
+local function FocusedTargetKey()
+    local picker = TargetPickerAPI()
+    if not (picker and type(picker.GetFocus) == "function") then return nil end
+    local ok, key = pcall(picker.GetFocus)
+    return ok and SafeString(key) or nil
+end
+
+local function TargetVisible(target)
+    if not (target and CategoryEnabled(target.category)) then return false end
+    local focusedKey = FocusedTargetKey()
+    return not focusedKey or focusedKey == target.key
+end
+
+local function SelectableTargets()
+    local output = {}
+    local player = not preview and PlayerSnapshot(CurrentMapID()) or nil
+    local source = preview and PREVIEW_TARGETS or activeTargets
+    local previewRange = tonumber(Settings().vignetteRadarRange) or 450
+    for _, target in ipairs(source) do
+        if CategoryEnabled(target.category) then
+            if preview then
+                target.distance = previewRange * target.distanceFactor
+            elseif player and not (player.instanceID and target.instanceID and player.instanceID ~= target.instanceID) then
+                local dx, dy = target.worldX - player.worldX, target.worldY - player.worldY
+                target.distance = math.sqrt((dx * dx) + (dy * dy))
+            else
+                target.distance = nil
+            end
+            target.red, target.green, target.blue = CategoryColor(target.category)
+            output[#output + 1] = target
+        end
+    end
+    table.sort(output, function(left, right)
+        if type(left.distance) == "number" and type(right.distance) == "number" and left.distance ~= right.distance then
+            return left.distance < right.distance
+        end
+        return (left.name or left.key or "") < (right.name or right.key or "")
+    end)
+    return output
+end
+
+local function ReconcileFocusedTarget()
+    local picker = TargetPickerAPI()
+    if picker and type(picker.ValidateTargets) == "function" then
+        pcall(picker.ValidateTargets, SelectableTargets())
+    end
+end
+
+local function UpdateTargetButton()
+    if not (panel and panel.target) then return end
+    local focusedKey = FocusedTargetKey()
+    local red, green, blue = ACCENT[1], ACCENT[2], ACCENT[3]
+    if focusedKey then
+        for _, target in ipairs(SelectableTargets()) do
+            if target.key == focusedKey then
+                red, green, blue = CategoryColor(target.category)
+                break
+            end
+        end
+    end
+    panel.target.dot:SetVertexColor(red, green, blue, 1)
+    panel.target.glow:SetVertexColor(red, green, blue, focusedKey and 0.20 or 0.05)
+    panel.target:SetAlpha(focusedKey and 1 or 0.68)
+end
+
 local function Tooltip(owner)
     local target = owner.target
     if not (target and GameTooltip) then return end
@@ -276,6 +355,9 @@ local function Tooltip(owner)
     GameTooltip:SetText(target.name or "Detected vignette", 1, 1, 1)
     if target.distance then
         GameTooltip:AddLine(math.floor(target.distance + 0.5) .. " yd from you", 0.72, 0.76, 0.78)
+    end
+    if FocusedTargetKey() == target.key then
+        GameTooltip:AddLine("Specific vignette focus is active.", ACCENT[1], ACCENT[2], ACCENT[3])
     end
     if target.sample then
         GameTooltip:AddLine("Layout preview; this is not a live detection.", 0.55, 0.86, 0.76, true)
@@ -386,14 +468,11 @@ Render = function()
     UpdateRingLabels(range)
 
     if preview then
-        panel.summary:SetText("PREVIEW")
+        panel.summary:SetText(FocusedTargetKey() and "PREVIEW FOCUS" or "PREVIEW")
         RenderCardinals(0.65)
-        local samples = {
-            { x = 28, y = 52, distance = range * 0.34, name = "Sample rare", category = "rare", sample = true },
-            { x = -58, y = -14, distance = range * 0.58, name = "Sample treasure", category = "treasure", sample = true },
-        }
-        for index, target in ipairs(samples) do
-            if CategoryEnabled(target.category) then PlaceBlip("preview-" .. index, target.x, target.y, target) end
+        for _, target in ipairs(PREVIEW_TARGETS) do
+            target.distance = range * target.distanceFactor
+            if TargetVisible(target) then PlaceBlip(target.key, target.x, target.y, target) end
         end
         EndBlips()
         return
@@ -413,7 +492,7 @@ Render = function()
     RenderCardinals(player.facing)
     local shown = 0
     for _, target in ipairs(activeTargets) do
-        if CategoryEnabled(target.category)
+        if TargetVisible(target)
             and not (player.instanceID and target.instanceID and player.instanceID ~= target.instanceID) then
             local dx, dy = target.worldX - player.worldX, target.worldY - player.worldY
             local distance = math.sqrt((dx * dx) + (dy * dy))
@@ -427,7 +506,11 @@ Render = function()
             end
         end
     end
-    panel.summary:SetText(shown == 1 and "1 IN RANGE" or shown .. " IN RANGE")
+    if FocusedTargetKey() then
+        panel.summary:SetText(shown > 0 and "TARGET FOCUS" or "FOCUS OUT OF RANGE")
+    else
+        panel.summary:SetText(shown == 1 and "1 IN RANGE" or shown .. " IN RANGE")
+    end
     EndBlips()
 end
 
@@ -451,6 +534,7 @@ local function LauncherTooltip(owner)
     if not GameTooltip then return end
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:SetText("Vignette Radar", 1, 1, 1)
+    GameTooltip:AddLine("The hollow center mirrors live detections within 150 yards.", 0.55, 0.86, 0.76, true)
     GameTooltip:AddLine("Left-click to show or tuck away the radar.", 0.65, 0.80, 0.77, true)
     GameTooltip:AddLine("Right-click to preview its live layout. Drag to move this launcher.", 0.65, 0.80, 0.77, true)
     GameTooltip:Show()
@@ -479,12 +563,12 @@ end
 
 local function CreateLauncherRing(parent, radius, alpha)
     local ring = {}
-    for index = 1, 32 do
+    for index = 1, 24 do
         local line = parent:CreateLine(nil, "ARTWORK")
-        local first = ((index - 1) / 32) * TWO_PI
-        local last = (index / 32) * TWO_PI
-        line:SetThickness(index % 4 == 0 and 1.6 or 1)
-        line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], index % 4 == 0 and alpha or alpha * 0.58)
+        local first = ((index - 1) / 24) * TWO_PI
+        local last = (index / 24) * TWO_PI
+        line:SetThickness(1)
+        line:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], alpha)
         line:SetStartPoint("CENTER", parent, "CENTER", math.cos(first) * radius, math.sin(first) * radius)
         line:SetEndPoint("CENTER", parent, "CENTER", math.cos(last) * radius, math.sin(last) * radius)
         ring[index] = line
@@ -495,32 +579,45 @@ end
 local function UpdateLauncherSweep(frame, elapsed)
     local active = Settings().vignetteRadarEnabled == true or preview
     frame._animationTime = (frame._animationTime or 0) + elapsed
-    local speed = frame._hovered and 2.9 or ((frame.detected or 0) > 0 and 2.1 or 1.15)
+    local speed = frame._hovered and 1.35 or 0.72
     frame._sweepAngle = ((frame._sweepAngle or 0) + elapsed * speed) % TWO_PI
     for index, line in ipairs(frame.sweepLines) do
-        local angle = frame._sweepAngle - ((index - 1) * 0.10)
-        local alpha = active and (0.72 / index) or (0.22 / index)
+        local angle = frame._sweepAngle - ((index - 1) * 0.13)
+        local alpha = active and (0.30 / index) or (0.08 / index)
         line:SetColorTexture(active and ACCENT[1] or 0.45, active and ACCENT[2] or 0.49,
             active and ACCENT[3] or 0.50, alpha)
         line:SetEndPoint("CENTER", frame, "CENTER", math.sin(angle) * LAUNCHER_RADIUS,
             math.cos(angle) * LAUNCHER_RADIUS)
     end
 
-    local pulse = 0.5 + (0.5 * math.sin(frame._animationTime * 5.5))
-    frame.alert:SetAlpha((frame.detected or 0) > 0 and (0.16 + pulse * 0.28) or 0)
-    frame.halo:SetAlpha(frame._pressed and 0.48 or (frame._hovered and 0.34 or (active and 0.20 or 0.08)))
-    frame.face:SetVertexColor(frame._pressed and 0.025 or 0.018, frame._pressed and 0.09 or 0.055,
-        frame._pressed and 0.075 or 0.064, 0.98)
+    local pulse = 0.5 + (0.5 * math.sin(frame._animationTime * 2.0))
+    local haloAlpha
+    if frame._pressed then
+        haloAlpha = 0.20
+    elseif frame._hovered then
+        haloAlpha = 0.15
+    elseif (frame.detected or 0) > 0 then
+        haloAlpha = 0.065 + (pulse * 0.035)
+    else
+        haloAlpha = active and 0.035 or 0.015
+    end
+    frame.halo:SetAlpha(haloAlpha)
+    frame.bezel:SetShown(active)
+    frame.closed:SetShown(not active)
+    local stateTexture = active and frame.bezel or frame.closed
+    stateTexture:SetAlpha(frame._pressed and 0.78 or (frame._hovered and 1 or 0.92))
+    frame.face:SetVertexColor(frame._pressed and 0.01 or 0.012, frame._pressed and 0.035 or 0.046,
+        frame._pressed and 0.038 or 0.052, 0.98)
 
     if frame._shock then
-        frame._shock = frame._shock + elapsed / 0.34
+        frame._shock = frame._shock + elapsed / 0.24
         if frame._shock >= 1 then
             frame._shock = nil
             frame.shock:Hide()
         else
-            local size = 35 + (frame._shock * 23)
+            local size = 28 + (frame._shock * 16)
             frame.shock:SetSize(size, size)
-            frame.shock:SetAlpha((1 - frame._shock) * 0.58)
+            frame.shock:SetAlpha((1 - frame._shock) * 0.22)
             frame.shock:Show()
         end
     end
@@ -531,7 +628,7 @@ UpdateLauncher = function(elapsed, updateTargets)
     UpdateLauncherSweep(launcher, elapsed or 0)
     if not updateTargets then return end
 
-    local range = tonumber(Settings().vignetteRadarRange) or 450
+    local range = LAUNCHER_RANGE
     local shown = 0
     local highlight = HighlightCategory()
     local player = not preview and Settings().vignetteRadarEnabled == true and PlayerSnapshot(CurrentMapID()) or nil
@@ -542,8 +639,8 @@ UpdateLauncher = function(elapsed, updateTargets)
         local red, green, blue = CategoryColor(target.category)
         dot:SetVertexColor(red, green, blue, 1)
         dot:SetAlpha(CategoryOpacity(target.category))
-        dot:SetSize(highlight == (target.category or "other") and 7 or 5,
-            highlight == (target.category or "other") and 7 or 5)
+        dot:SetSize(highlight == (target.category or "other") and 4 or 3,
+            highlight == (target.category or "other") and 4 or 3)
         dot:ClearAllPoints()
         dot:SetPoint("CENTER", launcher, "CENTER", x, y)
         dot:Show()
@@ -551,12 +648,12 @@ UpdateLauncher = function(elapsed, updateTargets)
     end
 
     if preview then
-        if CategoryEnabled("rare") then ShowDot({ category = "rare" }, 7, 11) end
-        if CategoryEnabled("treasure") then ShowDot({ category = "treasure" }, -13, -4) end
-        if CategoryEnabled("event") then ShowDot({ category = "event" }, 12, -11) end
+        for _, target in ipairs(PREVIEW_TARGETS) do
+            if TargetVisible(target) then ShowDot(target, target.launcherX, target.launcherY) end
+        end
     elseif player then
         for _, target in ipairs(activeTargets) do
-            if CategoryEnabled(target.category)
+            if TargetVisible(target)
                 and not (player.instanceID and target.instanceID and player.instanceID ~= target.instanceID) then
                 local dx, dy = target.worldX - player.worldX, target.worldY - player.worldY
                 local distance = math.sqrt((dx * dx) + (dy * dy))
@@ -569,8 +666,6 @@ UpdateLauncher = function(elapsed, updateTargets)
     end
     for index = shown + 1, #launcher.miniBlips do launcher.miniBlips[index]:Hide() end
     launcher.detected = shown
-    launcher.count:SetText(shown > 0 and tostring(shown) or "")
-    launcher.status:SetAlpha(shown > 0 and 1 or 0.48)
 end
 
 EnsureLauncher = function()
@@ -589,62 +684,69 @@ EnsureLauncher = function()
         type(position) == "table" and tonumber(position.y) or -170)
 
     launcher.shadow = launcher:CreateTexture(nil, "BACKGROUND")
-    launcher.shadow:SetSize(LAUNCHER_SIZE, LAUNCHER_SIZE)
+    launcher.shadow:SetSize(LAUNCHER_SIZE - 2, LAUNCHER_SIZE - 2)
     launcher.shadow:SetPoint("CENTER", 1, -1)
     launcher.shadow:SetTexture(CIRCLE_TEXTURE)
-    launcher.shadow:SetVertexColor(0, 0, 0, 0.68)
+    launcher.shadow:SetVertexColor(0, 0, 0, 0.58)
     launcher.halo = launcher:CreateTexture(nil, "BACKGROUND", nil, 1)
-    launcher.halo:SetSize(LAUNCHER_SIZE, LAUNCHER_SIZE)
+    launcher.halo:SetSize(LAUNCHER_SIZE - 2, LAUNCHER_SIZE - 2)
     launcher.halo:SetPoint("CENTER")
     launcher.halo:SetTexture(CIRCLE_TEXTURE)
     launcher.halo:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
     launcher.face = launcher:CreateTexture(nil, "BORDER")
-    launcher.face:SetSize(LAUNCHER_SIZE - 6, LAUNCHER_SIZE - 6)
+    launcher.face:SetSize(29, 29)
     launcher.face:SetPoint("CENTER")
     launcher.face:SetTexture(CIRCLE_TEXTURE)
-    launcher.face:SetVertexColor(0.018, 0.055, 0.064, 0.98)
-    launcher.alert = launcher:CreateTexture(nil, "ARTWORK")
-    launcher.alert:SetSize(LAUNCHER_SIZE - 1, LAUNCHER_SIZE - 1)
-    launcher.alert:SetPoint("CENTER")
-    launcher.alert:SetTexture(CIRCLE_TEXTURE)
-    launcher.alert:SetVertexColor(RED[1], RED[2], RED[3], 1)
-    launcher.alert:SetAlpha(0)
-    launcher.ring = CreateLauncherRing(launcher, LAUNCHER_RADIUS, 0.76)
-    launcher.innerRing = CreateLauncherRing(launcher, 13, 0.20)
+    launcher.face:SetVertexColor(0.012, 0.046, 0.052, 0.98)
+    launcher.ring = CreateLauncherRing(launcher, 9, 0.18)
+
+    launcher.horizontal = launcher:CreateTexture(nil, "ARTWORK")
+    launcher.horizontal:SetSize(25, 1)
+    launcher.horizontal:SetPoint("CENTER")
+    launcher.horizontal:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.12)
+    launcher.vertical = launcher:CreateTexture(nil, "ARTWORK")
+    launcher.vertical:SetSize(1, 25)
+    launcher.vertical:SetPoint("CENTER")
+    launcher.vertical:SetColorTexture(ACCENT[1], ACCENT[2], ACCENT[3], 0.12)
 
     launcher.sweepLines = {}
-    for index = 1, 4 do
+    for index = 1, 2 do
         local line = launcher:CreateLine(nil, "OVERLAY")
-        line:SetThickness(index == 1 and 1.8 or 1)
+        line:SetThickness(index == 1 and 1.2 or 1)
         line:SetStartPoint("CENTER", launcher, "CENTER", 0, 0)
         launcher.sweepLines[index] = line
     end
     launcher.centerGlow = launcher:CreateTexture(nil, "OVERLAY")
-    launcher.centerGlow:SetSize(11, 11)
+    launcher.centerGlow:SetSize(7, 7)
     launcher.centerGlow:SetPoint("CENTER")
     launcher.centerGlow:SetTexture(CIRCLE_TEXTURE)
     launcher.centerGlow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.22)
     launcher.center = launcher:CreateTexture(nil, "OVERLAY", nil, 1)
-    launcher.center:SetSize(5, 5)
+    launcher.center:SetSize(3, 3)
     launcher.center:SetPoint("CENTER")
     launcher.center:SetTexture(CIRCLE_TEXTURE)
     launcher.center:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
     launcher.miniBlips = {}
-    for index = 1, 3 do
+    for index = 1, 5 do
         local dot = launcher:CreateTexture(nil, "OVERLAY", nil, 2)
-        dot:SetSize(5, 5)
+        dot:SetSize(3, 3)
         dot:SetTexture(CIRCLE_TEXTURE)
         dot:Hide()
         launcher.miniBlips[index] = dot
     end
-    launcher.status = launcher:CreateTexture(nil, "OVERLAY", nil, 3)
-    launcher.status:SetSize(15, 15)
-    launcher.status:SetPoint("BOTTOMRIGHT", -2, 2)
-    launcher.status:SetTexture(CIRCLE_TEXTURE)
-    launcher.status:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
-    launcher.count = Text(launcher, 8, "")
-    launcher.count:SetPoint("CENTER", launcher.status, "CENTER", 0, 0)
-    launcher.count:SetJustifyH("CENTER")
+    launcher.rangeLabel = Text(launcher, 6, "150")
+    launcher.rangeLabel:SetPoint("BOTTOM", launcher, "BOTTOM", 0, 8)
+    launcher.rangeLabel:SetJustifyH("CENTER")
+    launcher.rangeLabel:SetTextColor(0.56, 0.78, 0.74, 0.68)
+    launcher.bezel = launcher:CreateTexture(nil, "OVERLAY", nil, 3)
+    launcher.bezel:SetAllPoints()
+    launcher.bezel:SetTexture(LAUNCHER_BEZEL)
+    launcher.bezel:SetAlpha(0.92)
+    launcher.closed = launcher:CreateTexture(nil, "OVERLAY", nil, 3)
+    launcher.closed:SetAllPoints()
+    launcher.closed:SetTexture(LAUNCHER_CLOSED)
+    launcher.closed:SetAlpha(0.92)
+    launcher.closed:Hide()
     launcher.shock = launcher:CreateTexture(nil, "OVERLAY", nil, 4)
     launcher.shock:SetPoint("CENTER")
     launcher.shock:SetTexture(CIRCLE_TEXTURE)
@@ -691,10 +793,14 @@ EnsureLauncher = function()
         end
     end)
     launcher:SetScript("OnUpdate", function(self, elapsed)
-        UpdateLauncherSweep(self, elapsed)
+        self._sweepElapsed = (self._sweepElapsed or 0) + elapsed
         self._targetElapsed = (self._targetElapsed or 0) + elapsed
         self._scanElapsed = (self._scanElapsed or 0) + elapsed
-        if self._targetElapsed >= 0.10 then
+        if self._sweepElapsed >= (1 / 30) then
+            UpdateLauncherSweep(self, self._sweepElapsed)
+            self._sweepElapsed = 0
+        end
+        if self._targetElapsed >= 0.15 then
             self._targetElapsed = 0
             UpdateLauncher(0, true)
         end
@@ -728,11 +834,60 @@ local function EnsurePanel()
 
     panel.drag = CreateFrame("Frame", nil, panel)
     panel.drag:SetPoint("TOPLEFT", 4, -3)
-    panel.drag:SetSize(PANEL_W - 66, HEADER_H - 6)
+    panel.drag:SetSize(PANEL_W - 92, HEADER_H - 6)
     panel.drag:EnableMouse(true)
     panel.drag:RegisterForDrag("LeftButton")
     panel.drag:SetScript("OnDragStart", function() panel:StartMoving() end)
     panel.drag:SetScript("OnDragStop", function() panel:StopMovingOrSizing(); SavePosition() end)
+
+    panel.target = CreateFrame("Button", nil, panel)
+    panel.target:SetSize(24, 24)
+    panel.target:SetPoint("TOPRIGHT", -57, -5)
+    panel.target:SetAlpha(0.68)
+    panel.target:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    panel.target:SetHighlightTexture("Interface\\Buttons\\WHITE8X8")
+    panel.target:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.07)
+    panel.target.glow = panel.target:CreateTexture(nil, "BACKGROUND")
+    panel.target.glow:SetSize(18, 18)
+    panel.target.glow:SetPoint("CENTER")
+    panel.target.glow:SetTexture(CIRCLE_TEXTURE)
+    panel.target.glow:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 0.05)
+    panel.target.crossH = panel.target:CreateTexture(nil, "ARTWORK")
+    panel.target.crossH:SetSize(16, 1)
+    panel.target.crossH:SetPoint("CENTER")
+    panel.target.crossH:SetColorTexture(0.61, 0.67, 0.68, 0.80)
+    panel.target.crossV = panel.target:CreateTexture(nil, "ARTWORK")
+    panel.target.crossV:SetSize(1, 16)
+    panel.target.crossV:SetPoint("CENTER")
+    panel.target.crossV:SetColorTexture(0.61, 0.67, 0.68, 0.80)
+    panel.target.dot = panel.target:CreateTexture(nil, "OVERLAY")
+    panel.target.dot:SetSize(6, 6)
+    panel.target.dot:SetPoint("CENTER")
+    panel.target.dot:SetTexture(CIRCLE_TEXTURE)
+    panel.target.dot:SetVertexColor(ACCENT[1], ACCENT[2], ACCENT[3], 1)
+    panel.target:SetScript("OnClick", function(self, button)
+        local picker = TargetPickerAPI()
+        if not picker then return end
+        local legend = LegendAPI()
+        if legend and type(legend.Hide) == "function" then pcall(legend.Hide) end
+        panel.legend:SetAlpha(0.68)
+        if button == "RightButton" then
+            if type(picker.ClearFocus) == "function" then pcall(picker.ClearFocus) end
+        elseif type(picker.Toggle) == "function" then
+            pcall(picker.Toggle, panel)
+        end
+        UpdateTargetButton()
+    end)
+    panel.target:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Focus a specific vignette", 1, 1, 1)
+        GameTooltip:AddLine("Choose one current detection to isolate on the full radar and the 150-yard launcher view.",
+            0.65, 0.80, 0.77, true)
+        GameTooltip:AddLine("Right-click to show all again.", 0.55, 0.86, 0.76, true)
+        GameTooltip:Show()
+    end)
+    panel.target:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
     panel.legend = CreateFrame("Button", nil, panel)
     panel.legend:SetSize(24, 24)
@@ -761,6 +916,8 @@ local function EnsurePanel()
     panel.legend:SetScript("OnClick", function(self)
         local legend = LegendAPI()
         if not (legend and type(legend.Toggle) == "function") then return end
+        local picker = TargetPickerAPI()
+        if picker and type(picker.Hide) == "function" then pcall(picker.Hide) end
         local ok, shown = pcall(legend.Toggle, panel)
         if ok then self:SetAlpha(shown and 1 or 0.68) end
     end)
@@ -788,6 +945,8 @@ local function EnsurePanel()
         panel:Hide()
         local legend = LegendAPI()
         if legend and type(legend.Hide) == "function" then pcall(legend.Hide) end
+        local picker = TargetPickerAPI()
+        if picker and type(picker.Hide) == "function" then pcall(picker.Hide) end
         if UpdateLauncher then UpdateLauncher(0, true) end
     end)
     panel.close:SetScript("OnEnter", function(self)
@@ -863,10 +1022,14 @@ local function EnsurePanel()
     panel:SetScript("OnHide", function()
         ReleaseAllBlips()
         panel.legend:SetAlpha(0.68)
+        UpdateTargetButton()
         local legend = LegendAPI()
         if legend and type(legend.Hide) == "function" then pcall(legend.Hide) end
+        local picker = TargetPickerAPI()
+        if picker and type(picker.Hide) == "function" then pcall(picker.Hide) end
     end)
     RenderCardinals(0)
+    UpdateTargetButton()
     return panel
 end
 
@@ -883,6 +1046,9 @@ RefreshRadar = function(rescan)
         launcher:Hide()
     end
     if rescan then ScanVignettes(CurrentMapID()) end
+    ReconcileFocusedTarget()
+    local picker = TargetPickerAPI()
+    if picker and type(picker.Refresh) == "function" then pcall(picker.Refresh) end
     if settings.vignetteRadarEnabled ~= true and not preview then
         if panel then panel:Hide() end
         if launcher then UpdateLauncher(0, true) end
@@ -897,11 +1063,13 @@ RefreshRadar = function(rescan)
         panel:Hide()
     end
     if launcher then UpdateLauncher(0, true) end
+    UpdateTargetButton()
 end
 
 addon.RefreshVignetteRadar = function() RefreshRadar(true) end
 addon.VignetteRadarAPI = {
     GetTargets = function() return activeTargets end,
+    GetSelectableTargets = SelectableTargets,
     GetPanel = function() return panel end,
     GetLauncher = function() return launcher end,
     IsPreviewing = function() return preview end,
@@ -917,8 +1085,21 @@ do
     if legend and type(legend.ApplyDefaults) == "function" then pcall(legend.ApplyDefaults, Settings()) end
     if legend and type(legend.SetChangeCallback) == "function" then
         legend.SetChangeCallback(function()
+            ReconcileFocusedTarget()
+            local picker = TargetPickerAPI()
+            if picker and type(picker.Refresh) == "function" then pcall(picker.Refresh) end
             if panel and panel:IsShown() then Render() end
             if launcher then UpdateLauncher(0, true) end
+            UpdateTargetButton()
+        end)
+    end
+    local picker = TargetPickerAPI()
+    if picker and type(picker.SetProvider) == "function" then pcall(picker.SetProvider, SelectableTargets) end
+    if picker and type(picker.SetChangeCallback) == "function" then
+        picker.SetChangeCallback(function()
+            if panel and panel:IsShown() then Render() end
+            if launcher then UpdateLauncher(0, true) end
+            UpdateTargetButton()
         end)
     end
 end
@@ -965,7 +1146,7 @@ function addon.BuildVignetteRadarOptions(parent, y)
         {
             type = "toggle",
             text = "Show Radar Launcher",
-            tooltip = "Keep the animated, draggable radar instrument available. Left-click it to show or tuck away the full field; right-click it for a layout preview.",
+            tooltip = "Keep the compact, draggable 150-yard radar instrument available. Left-click it to show or tuck away the full field; right-click it for a layout preview.",
             getValue = function() return Settings().vignetteRadarLauncherVisible ~= false end,
             setValue = function(value)
                 Settings().vignetteRadarLauncherVisible = value == true

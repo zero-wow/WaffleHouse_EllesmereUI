@@ -1,5 +1,6 @@
 local sourcePath = arg[1] or "WaffleHouse_VignetteRadar.lua"
 local legendSourcePath = arg[2] or "WaffleHouse_VignetteRadarLegend.lua"
+local targetPickerSourcePath = arg[3] or "WaffleHouse_VignetteRadarTargetPicker.lua"
 unpack = table.unpack
 
 local objects = {}
@@ -42,6 +43,7 @@ function methods:SetTextColor(...) self.textColor = { ... } end
 function methods:SetJustifyH(value) self.justifyH = value end
 function methods:SetWordWrap(value) self.wordWrap = value end
 function methods:IsShown() return self.shown == true end
+function methods:SetShown(value) if value then self:Show() else self:Hide() end end
 function methods:Show() self.shown = true end
 function methods:Hide() self.shown = false; if self.scripts and self.scripts.OnHide then self.scripts.OnHide(self) end end
 function methods:StartMoving() self.moving = true end
@@ -115,6 +117,7 @@ EllesmereUI = { EXPRESSWAY = "native-eui-font.ttf", Widgets = Widgets }
 local settings = { vignetteRadarEnabled = true, vignetteRadarHideWhenEmpty = true, vignetteRadarRange = 450 }
 local addon = { GetSettings = function() return settings end }
 assert(loadfile(legendSourcePath))("WaffleHouse_EllesmereUI", addon)
+assert(loadfile(targetPickerSourcePath))("WaffleHouse_EllesmereUI", addon)
 assert(loadfile(sourcePath))("WaffleHouse_EllesmereUI", addon)
 
 local optionsParent = CreateFrame("Frame", nil, UIParent)
@@ -135,16 +138,17 @@ assert(settings.vignetteRadarEnabled == false, "layout preview must not silently
 assert(panel:IsShown() and panel.width == 220 and panel.height == 252, "preview must show the intended compact panel")
 assert(panel.field.width == 200 and panel.field.height == 200 and panel.field.point[1] == "BOTTOM"
     and panel.field.point[3] == 9, "radar field must fit below the header with a visible gutter")
-assert(panel.drag.width == 154 and panel.legend.point[1] == "TOPRIGHT" and panel.close.point[1] == "TOPRIGHT",
-    "drag target must stop before the separate legend and close controls")
+assert(panel.drag.width == 128 and panel.target.point[1] == "TOPRIGHT"
+    and panel.legend.point[1] == "TOPRIGHT" and panel.close.point[1] == "TOPRIGHT",
+    "drag target must stop before the focus, legend, and close controls")
 assert(panel.title.font[1] == EllesmereUI.EXPRESSWAY, "radar must use native EllesmereUI typography")
-assert(panel.summary.text == "PREVIEW" and #panel.blips == 2,
-    "preview must be explicit and render exactly two sample markers")
+assert(panel.summary.text == "PREVIEW" and #panel.blips == 3,
+    "preview must be explicit and render one sample marker for each themed category")
 local firstBlip, secondBlip = panel.blips[1], panel.blips[2]
 for _, blip in ipairs(panel.blips) do
     assert(blip._seen and blip.target.sample == true, "preview marker must be labeled as sample data")
-    assert(blip.dot.vertexColor[1] == 1,
-        "preview and live markers must use a strong category treatment")
+    assert(blip.target.category and blip.dot.vertexColor[4] == 1,
+        "preview and live markers must use an opaque category treatment")
     local x, y = blip.point[4], blip.point[5]
     assert(math.sqrt(x * x + y * y) < 91, "preview markers must remain inside the radar ring")
 end
@@ -154,14 +158,19 @@ assert(panel.blips[1] == firstBlip and panel.blips[2] == secondBlip and firstBli
 assert(#panel.outerRing == 64 and #panel.middleRing == 64 and #panel.innerRing == 64,
     "all radar rings must be complete and bounded")
 assert(panel.clamped == true and panel.movable == true, "panel must remain movable and clamped to screen")
-assert(launcher.width == 58 and launcher.height == 58 and launcher.clamped == true and launcher.movable == true,
+assert(launcher.width == 44 and launcher.height == 44 and launcher.clamped == true and launcher.movable == true,
     "launcher must be a compact draggable instrument that stays on screen")
 assert(launcher.clickButtons[1] == "LeftButtonUp" and launcher.clickButtons[2] == "RightButtonUp"
     and launcher.dragButtons[1] == "LeftButton", "launcher must expose distinct click and drag gestures")
-assert(#launcher.ring == 32 and #launcher.innerRing == 32 and #launcher.sweepLines == 4,
-    "launcher needs segmented depth and an animated sweep rather than a flat icon")
-assert(#launcher.miniBlips == 3 and launcher.miniBlips[1]:IsShown(),
+assert(#launcher.ring == 24 and #launcher.sweepLines == 2
+    and launcher.bezel.texture:find("vignette%-radar%-bezel%.tga$")
+    and launcher.closed.texture:find("vignette%-radar%-closed%.tga$"),
+    "launcher needs matching jeweled closed and hollow live states")
+assert(launcher.rangeLabel.text == "150" and #launcher.miniBlips == 5 and launcher.miniBlips[1]:IsShown(),
     "launcher preview must mirror category dots inside its compact field")
+launcher.scripts.OnUpdate(launcher, 0.05)
+assert(launcher.halo.alpha >= 0.065 and launcher.halo.alpha <= 0.10 and launcher.alert == nil,
+    "live detections may use only a soft low-amplitude glow, never a flashing full-face alert")
 
 panel.legend.scripts.OnClick(panel.legend)
 local legendPanel = assert(_G.WaffleHouseVignetteRadarLegend, "radar header must open its attached legend")
@@ -173,5 +182,21 @@ assert(settings.vignetteRadarHighlight == "rare" and firstBlip:GetAlpha() == 1 a
 legendPanel.rows.treasure.toggle.scripts.OnClick(legendPanel.rows.treasure.toggle)
 assert(settings.vignetteRadarCategories.treasure == false and not secondBlip:IsShown(),
     "legend category switches must remove disabled dots from the radar immediately")
+
+-- Restore treasure so the specific-vignette picker can exercise more than one row.
+addon.VignetteRadarLegend.SetCategoryEnabled("treasure", true)
+panel.target.scripts.OnClick(panel.target, "LeftButton")
+local targetPanel = assert(_G.WaffleHouseVignetteRadarTargetPicker, "reticle button must open its target picker")
+assert(targetPanel:IsShown() and targetPanel.rows[1].target.key == "preview-rare",
+    "specific-vignette picker must list current detections nearest first")
+targetPanel.rows[1].scripts.OnClick(targetPanel.rows[1])
+assert(addon.VignetteRadarTargetPicker.GetFocus() == "preview-rare" and firstBlip:IsShown()
+    and not secondBlip:IsShown(), "specific focus must isolate one vignette across the full radar")
+panel.target.scripts.OnClick(panel.target, "RightButton")
+assert(addon.VignetteRadarTargetPicker.GetFocus() == nil,
+    "right-clicking the reticle must restore all category-filtered vignettes")
+SlashCmdList.WAFFLEHOUSEVIGNETTERADAR("off")
+assert(launcher.closed:IsShown() and not launcher.bezel:IsShown() and not launcher.miniBlips[1]:IsShown(),
+    "disabled tracking must close the live center into its filled jeweled state")
 
 io.write("vignette radar UI tests passed\n")

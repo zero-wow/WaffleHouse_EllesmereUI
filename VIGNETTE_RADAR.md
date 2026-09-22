@@ -12,14 +12,19 @@ maintain a rare database, or infer coordinates that the game has not supplied.
 - The header's legend button opens filters for rares, treasure, events, and
   other vignettes. Click a category row to spotlight it while retaining dim
   spatial context; use its ON/OFF control to remove that category entirely.
+- The neighboring reticle button lists current detections by name and distance.
+  Choose one to isolate it across both radar views, use **Show All** to clear
+  the focus, or right-click the reticle for the same reset.
 - Hover a live dot for the vignette name and approximate distance when those
   values are available from the game.
 - By default the panel appears only while at least one usable minimap vignette
   is active. Disable **Hide When Empty** to keep the field visible.
-- Drag the header to move the full panel. The separate circular launcher is
-  also draggable, mirrors up to three current dots, animates its sweep and
-  detection pulse, and has distinct hover, pressed, and click feedback. Left
-  click it to show or tuck away the panel; right click it to toggle preview.
+- Drag the header to move the full panel. The separate 44-pixel launcher is
+  also draggable. Disabled tracking uses a closed jeweled emblem; enabled
+  tracking opens its center into a live 150-yard view with up to five current
+  dots and a restrained sweep. Detections use a slow, low-amplitude glow
+  instead of flashing the face. Left click it to show or tuck away the panel;
+  right click it to toggle preview.
 - `/whradar` shows or tucks away the panel, `/whradar preview` toggles sample
   layout mode, and `/whradar off` disables tracking while leaving the launcher
   available to turn it back on.
@@ -28,3 +33,8 @@ Coordinates are transformed through `C_Map.GetWorldPosFromMapPos`, so map
 aspect ratio and yard distance are respected. Vignettes with unavailable,
 protected, off-map, or cross-instance positions are skipped rather than placed
 approximately. The feature never changes the minimap or its objects.
+
+The launcher reuses the radar's existing vignette scan. It rescans at most once
+per second while the main panel is closed, repositions up to five miniature
+dots every 0.15 seconds, and caps its two-line decorative sweep at 30 updates
+per second. It does not run a second location scan or duplicate the minimap.
