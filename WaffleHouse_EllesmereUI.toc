@@ -1,0 +1,28 @@
+## Interface: 120000, 120001, 120005
+## Title: Waffle House
+## Notes: Vendor bag enhancements, party and raid buff checks, and opt-in quest, dialogue, cinematic, and merchant automation for EllesmereUI.
+## Author: Zero
+## Version: 0.1.0-dev.1
+## Dependencies: EllesmereUI, EllesmereUIVendorBag
+## OptionalDeps: EllesmereUIBlizzardSkin, ZygorGuidesViewer, EllesmereUIDataBars, EllesmereUIBags
+## SavedVariables: WaffleHouseDB, EllesmereUI_WaffleHouseDB, EllesmereUI_QoLDB
+## IconTexture: Interface\AddOns\WaffleHouse_EllesmereUI\Media\icon.png
+
+WaffleHouse_EllesmereUI.lua
+WaffleHouse_VendorOptions.lua
+WaffleHouse_VendorStack.lua
+WaffleHouse_Adventure.lua
+WaffleHouse_SoireeRules.lua
+WaffleHouse_Soiree.lua
+WaffleHouse_BagSlotFreeze.lua
+WaffleHouse_BagAssistant.lua
+WaffleHouse_BuffFrameRules.lua
+WaffleHouse_BuffFrame.lua
+WaffleHouse_BuffFrameRepair.lua
+WaffleHouse_BuffFrameOptions.lua
+WaffleHouse_QuestAdvanceChoices.lua
+WaffleHouse_Automation.lua
+WaffleHouse_Logo.lua
+WaffleHouse_VendorTracking.lua
+WaffleHouse_BuffCheck.lua
+WaffleHouse_BuffCheckUI.lua

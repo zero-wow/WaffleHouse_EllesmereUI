@@ -1,0 +1,13 @@
+# Local validation snapshots and experiment output
+.validation/
+artwork/
+
+# Local Codex deployment instructions
+AGENTS.md
+
+# Editor and operating-system metadata
+.vscode/
+.idea/
+*.code-workspace
+Thumbs.db
+Desktop.ini

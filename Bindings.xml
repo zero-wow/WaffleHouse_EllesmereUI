@@ -1,0 +1,3 @@
+<Bindings>
+    <Binding name="CLICK WaffleHouseItemQueueButton:LeftButton" header="WAFFLEHOUSE" />
+</Bindings>
