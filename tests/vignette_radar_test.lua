@@ -13,7 +13,7 @@ local function vector(x, y)
 end
 
 local infos = {
-    live = { name = "Live Treasure", onMinimap = true, isDead = false },
+    live = { name = "Live Treasure", atlasName = "VignetteLoot", onMinimap = true, isDead = false },
     worldOnly = { name = "World Map Only", onMinimap = false, isDead = false },
     dead = { name = "Dead Rare", onMinimap = true, isDead = true },
     hidden = { name = "Hidden", onMinimap = { secret = true }, isDead = false },
@@ -49,6 +49,7 @@ assert(not T.DisplayableVignetteInfo(infos.hidden), "secret visibility values mu
 
 local targets = T.CollectVignettes(777)
 assert(#targets == 1 and targets[1].name == "Live Treasure", "only usable active minimap vignettes should be collected")
+assert(targets[1].category == "treasure", "Blizzard vignette metadata must drive the visible legend category")
 assert(targets[1].worldX == 550 and targets[1].worldY == 400 and targets[1].instanceID == 42,
     "vignette positions must be converted to world yards")
 
@@ -71,8 +72,8 @@ local source = sourceFile:read("*a")
 sourceFile:close()
 assert(source:find('SafeBoolean(SafeField(info, "onMinimap")) == true', 1, true),
     "collection must explicitly require Blizzard minimap visibility")
-assert(source:find('blip.dot:SetVertexColor(RED[1], RED[2], RED[3], 1)', 1, true),
-    "live radar markers must use the requested red dot")
+assert(source:find('CategoryColor(target.category)', 1, true),
+    "live radar markers must use the shared legend category treatment")
 assert(source:find('C_Map.GetWorldPosFromMapPos', 1, true), "radar must use world-yard projection")
 assert(not source:find('Minimap:SetParent', 1, true), "radar must never reparent or alter the real minimap")
 

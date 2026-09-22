@@ -77,7 +77,7 @@ Other guardrails are intentional:
 
 - Item Queue only presents a button; it does not consume items on its own.
 - Buff Check can show missing coverage and configure secure clicks, but it does not select targets automatically or message the group.
-- Vignette Radar only projects live minimap vignettes and coordinates exposed by Blizzard; it does not scan for hidden locations or ship a rare database.
+- Vignette Radar only projects live minimap vignettes and coordinates exposed by Blizzard; its draggable animated launcher, category legend, filters, and spotlight mode do not scan for hidden locations or ship a rare database.
 - The vendor quantity flow hands the final purchase back to Blizzard's native merchant system, retaining its affordability checks and confirmations.
 - Bag Slot Freeze records an explicit slot choice and keeps that item in place only when you use the bag sort flow.
 

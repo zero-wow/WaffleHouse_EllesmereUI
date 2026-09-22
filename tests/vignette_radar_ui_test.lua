@@ -1,4 +1,5 @@
 local sourcePath = arg[1] or "WaffleHouse_VignetteRadar.lua"
+local legendSourcePath = arg[2] or "WaffleHouse_VignetteRadarLegend.lua"
 unpack = table.unpack
 
 local objects = {}
@@ -8,6 +9,7 @@ function methods:SetWidth(width) self.width = width end
 function methods:SetHeight(height) self.height = height end
 function methods:GetWidth() return self.width or 0 end
 function methods:GetHeight() return self.height or 0 end
+function methods:GetRight() return self.right or ((self:GetLeft() or 0) + self:GetWidth()) end
 function methods:SetPoint(...) self.point = { ... }; self.points = self.points or {}; self.points[#self.points + 1] = self.point end
 function methods:ClearAllPoints() self.point, self.points = nil, {} end
 function methods:SetAllPoints(...) self.allPoints = { ... } end
@@ -20,6 +22,7 @@ function methods:GetFrameLevel() return self.level or 1 end
 function methods:SetClampedToScreen(value) self.clamped = value end
 function methods:SetMovable(value) self.movable = value end
 function methods:EnableMouse(value) self.mouse = value end
+function methods:RegisterForClicks(...) self.clickButtons = { ... } end
 function methods:RegisterForDrag(...) self.dragButtons = { ... } end
 function methods:RegisterEvent(event) self.events = self.events or {}; self.events[event] = true end
 function methods:SetScript(name, callback) self.scripts = self.scripts or {}; self.scripts[name] = callback end
@@ -28,6 +31,8 @@ function methods:GetHighlightTexture() return self.highlight end
 function methods:SetTexture(value) self.texture = value end
 function methods:SetColorTexture(...) self.color = { ... } end
 function methods:SetVertexColor(...) self.vertexColor = { ... } end
+function methods:SetAlpha(value) self.alpha = value end
+function methods:GetAlpha() return self.alpha == nil and 1 or self.alpha end
 function methods:SetThickness(value) self.thickness = value end
 function methods:SetStartPoint(...) self.startPoint = { ... } end
 function methods:SetEndPoint(...) self.endPoint = { ... } end
@@ -75,6 +80,7 @@ GameTooltip = {
     SetOwner = function() end, SetText = function() end, AddLine = function() end,
     Show = function() end, Hide = function() end,
 }
+C_Timer = { After = function(_, callback) callback() end }
 C_Map = {
     GetBestMapForUnit = function() return 777 end,
     GetPlayerMapPosition = function() return { x = 0.5, y = 0.5 } end,
@@ -108,6 +114,7 @@ EllesmereUI = { EXPRESSWAY = "native-eui-font.ttf", Widgets = Widgets }
 
 local settings = { vignetteRadarEnabled = true, vignetteRadarHideWhenEmpty = true, vignetteRadarRange = 450 }
 local addon = { GetSettings = function() return settings end }
+assert(loadfile(legendSourcePath))("WaffleHouse_EllesmereUI", addon)
 assert(loadfile(sourcePath))("WaffleHouse_EllesmereUI", addon)
 
 local optionsParent = CreateFrame("Frame", nil, UIParent)
@@ -123,20 +130,21 @@ assert(sectionFound and nativeControls >= 6, "Adventure options need a populated
 settings.vignetteRadarEnabled = false
 SlashCmdList.WAFFLEHOUSEVIGNETTERADAR("preview")
 local panel = assert(_G.WaffleHouseVignetteRadar, "preview must construct the radar panel")
+local launcher = assert(_G.WaffleHouseVignetteRadarLauncher, "preview must construct the draggable launcher")
 assert(settings.vignetteRadarEnabled == false, "layout preview must not silently enable live tracking")
 assert(panel:IsShown() and panel.width == 220 and panel.height == 252, "preview must show the intended compact panel")
 assert(panel.field.width == 200 and panel.field.height == 200 and panel.field.point[1] == "BOTTOM"
     and panel.field.point[3] == 9, "radar field must fit below the header with a visible gutter")
-assert(panel.drag.width == 182 and panel.close.point[1] == "TOPRIGHT",
-    "drag target must stop before the close control")
+assert(panel.drag.width == 154 and panel.legend.point[1] == "TOPRIGHT" and panel.close.point[1] == "TOPRIGHT",
+    "drag target must stop before the separate legend and close controls")
 assert(panel.title.font[1] == EllesmereUI.EXPRESSWAY, "radar must use native EllesmereUI typography")
 assert(panel.summary.text == "PREVIEW" and #panel.blips == 2,
     "preview must be explicit and render exactly two sample markers")
 local firstBlip, secondBlip = panel.blips[1], panel.blips[2]
 for _, blip in ipairs(panel.blips) do
     assert(blip._seen and blip.target.sample == true, "preview marker must be labeled as sample data")
-    assert(blip.dot.vertexColor[1] == 1 and blip.dot.vertexColor[2] == 0.18,
-        "preview and live markers must share the requested red treatment")
+    assert(blip.dot.vertexColor[1] == 1,
+        "preview and live markers must use a strong category treatment")
     local x, y = blip.point[4], blip.point[5]
     assert(math.sqrt(x * x + y * y) < 91, "preview markers must remain inside the radar ring")
 end
@@ -146,5 +154,24 @@ assert(panel.blips[1] == firstBlip and panel.blips[2] == secondBlip and firstBli
 assert(#panel.outerRing == 64 and #panel.middleRing == 64 and #panel.innerRing == 64,
     "all radar rings must be complete and bounded")
 assert(panel.clamped == true and panel.movable == true, "panel must remain movable and clamped to screen")
+assert(launcher.width == 58 and launcher.height == 58 and launcher.clamped == true and launcher.movable == true,
+    "launcher must be a compact draggable instrument that stays on screen")
+assert(launcher.clickButtons[1] == "LeftButtonUp" and launcher.clickButtons[2] == "RightButtonUp"
+    and launcher.dragButtons[1] == "LeftButton", "launcher must expose distinct click and drag gestures")
+assert(#launcher.ring == 32 and #launcher.innerRing == 32 and #launcher.sweepLines == 4,
+    "launcher needs segmented depth and an animated sweep rather than a flat icon")
+assert(#launcher.miniBlips == 3 and launcher.miniBlips[1]:IsShown(),
+    "launcher preview must mirror category dots inside its compact field")
+
+panel.legend.scripts.OnClick(panel.legend)
+local legendPanel = assert(_G.WaffleHouseVignetteRadarLegend, "radar header must open its attached legend")
+assert(legendPanel:IsShown() and legendPanel.point[1] == "TOPLEFT" and legendPanel.point[3] == "TOPRIGHT",
+    "legend must open outside the radar with a visible gutter")
+legendPanel.rows.rare.scripts.OnClick(legendPanel.rows.rare)
+assert(settings.vignetteRadarHighlight == "rare" and firstBlip:GetAlpha() == 1 and secondBlip:GetAlpha() == 0.18,
+    "spotlighting a category must keep its dots strong and dim the remaining context")
+legendPanel.rows.treasure.toggle.scripts.OnClick(legendPanel.rows.treasure.toggle)
+assert(settings.vignetteRadarCategories.treasure == false and not secondBlip:IsShown(),
+    "legend category switches must remove disabled dots from the radar immediately")
 
 io.write("vignette radar UI tests passed\n")
