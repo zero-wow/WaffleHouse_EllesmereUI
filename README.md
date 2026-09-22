@@ -24,7 +24,7 @@ Waffle House extends EllesmereUI with practical tools that reduce friction witho
 | **Item Queue** | A priority-aware button for usable unlocks and utility items in your bags. You choose when to use an item; it never uses one automatically. |
 | **Bags** | Freeze a main-bag item in its physical slot before sorting, with a configurable modifier and lock marker. |
 | **Group preparation** | A compact Buff Check for party and raid coverage, including click-to-cast group buffs and explicit recipient choices for supported assignment spells. |
-| **Adventure tools** | A Trusty Delve Companion curio helper, optional Valeera voice mute, and group-prep controls in one place. |
+| **Adventure tools** | A flat, heading-up radar for active minimap vignettes, a Trusty Delve Companion curio helper, optional Valeera voice mute, and group-prep controls in one place. |
 | **Saltheril's Soiree** | Pick a faction focus or follow the extra Favor reward. An EllesmereUI accent highlights the suggested guest and invitation button; hover the info badge to understand gains, losses, and the recommendation. |
 | **Automation** | Individually enabled quest, dialogue, campaign-skip, cinematic, merchant, and Ethereal Tool Rack actions with safeguards for ambiguity and a hold-to-pause key. |
 | **UI care** | A Waffle House header logo, an optional Zygor Guide Pointer skin, Wonderbar reordering, and a targeted repair for an obsolete Buff Frame anchor. |
@@ -65,6 +65,7 @@ In **Vendor → Interact Key**, choose **Manage** to expand the ignored-NPC tabl
 | `/whbuffs` | Show and enable Buff Check. |
 | `/whbuffs off` | Disable Buff Check. |
 | `/whbuffs preview` | Toggle a non-casting sample 40-player preview. |
+| `/whradar` | Toggle Vignette Radar. Use `/whradar preview`, `/whradar on`, or `/whradar off` for an explicit action. |
 | `/whbuffrepair` | Recheck and repair the specific legacy `PlayerBuffsMover` Buff Frame anchor when it is safe to do so. |
 | `/whqueue` | Open diagnostics for the currently displayed Item Queue item; it also accepts a bag/slot, item ID, or item-name search. |
 
@@ -76,6 +77,7 @@ Other guardrails are intentional:
 
 - Item Queue only presents a button; it does not consume items on its own.
 - Buff Check can show missing coverage and configure secure clicks, but it does not select targets automatically or message the group.
+- Vignette Radar only projects live minimap vignettes and coordinates exposed by Blizzard; it does not scan for hidden locations or ship a rare database.
 - The vendor quantity flow hands the final purchase back to Blizzard's native merchant system, retaining its affordability checks and confirmations.
 - Bag Slot Freeze records an explicit slot choice and keeps that item in place only when you use the bag sort flow.
 
@@ -93,6 +95,7 @@ Two important current limits are documented explicitly:
 - [Vendor stack purchase behavior](VENDOR_STACK.md)
 - [Buff Check behavior and limits](BUFF_CHECK.md)
 - [Soiree focus and recommendation behavior](SOIREE_HELPER.md)
+- [Vignette Radar behavior and limits](VIGNETTE_RADAR.md)
 - [Buff Frame safety and anchor repair](BUFF_FRAME.md)
 - [Quest-advance choice database policy](QUEST_ADVANCE_CHOICES.md)
 - [Issue tracker](https://github.com/zero-wow/WaffleHouse_EllesmereUI/issues)
