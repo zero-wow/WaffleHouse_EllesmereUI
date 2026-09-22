@@ -349,7 +349,7 @@ local function Render()
             end
         end
     end
-    panel.summary:SetText(shown == 1 and "1 DETECTED" or shown .. " DETECTED")
+    panel.summary:SetText(shown == 1 and "1 IN RANGE" or shown .. " IN RANGE")
     EndBlips()
 end
 
@@ -376,7 +376,7 @@ local function EnsurePanel()
 
     panel.title = Text(panel, 12, "VIGNETTE RADAR", true)
     panel.title:SetPoint("TOPLEFT", 12, -10)
-    panel.summary = Text(panel, 9, "0 DETECTED")
+    panel.summary = Text(panel, 9, "0 IN RANGE")
     panel.summary:SetPoint("TOPRIGHT", -34, -11)
     panel.summary:SetJustifyH("RIGHT")
 
