@@ -429,8 +429,6 @@ function addon.BuildAdventurePage(parent, yOffset)
     -- owns its native EUI header and the height of its controls.
     if addon.BuildSoireeOptions then y = addon.BuildSoireeOptions(parent, y) end
 
-    if addon.BuildVignetteRadarOptions then y = addon.BuildVignetteRadarOptions(parent, y) end
-
     _, h = W:SectionHeader(parent, "DELVE COMPANION", y); y = y - h
     _, h = W:DualRow(parent, y,
         {

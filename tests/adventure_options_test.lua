@@ -17,8 +17,8 @@ assert(adventure:find('if addon.BuildBuffCheckPage then y = -addon.BuildBuffChec
 assert(not adventure:find('OptionsSectionIntro', 1, true), "Adventure must not display empty activity headings")
 assert(adventure:find('if addon.BuildSoireeOptions then y = addon.BuildSoireeOptions(parent, y) end', 1, true),
     "Soiree must build its own populated section when available")
-assert(adventure:find('if addon.BuildVignetteRadarOptions then y = addon.BuildVignetteRadarOptions(parent, y) end', 1, true),
-    "Vignette Radar must build its own populated Adventure section when available")
+assert(not adventure:find('BuildVignetteRadarOptions', 1, true),
+    "Vignette Radar settings must live in the standalone addon")
 assert(adventure:find('local function SkinValeeraMuterButton()', 1, true), "Valeera muter needs a remote EUI skin")
 assert(adventure:find('button._waffleValeeraMuteText:SetText(muted and "Mute: ON" or "Mute: OFF")', 1, true),
     "muter button needs an owned text-only label")

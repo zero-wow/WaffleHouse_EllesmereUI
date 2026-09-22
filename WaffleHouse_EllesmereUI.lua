@@ -158,16 +158,6 @@ local function GetSettings()
     if WaffleHouseDB.muteValeeraVoiceLines == nil then
         WaffleHouseDB.muteValeeraVoiceLines = false
     end
-    if WaffleHouseDB.vignetteRadarEnabled == nil then
-        WaffleHouseDB.vignetteRadarEnabled = true
-    end
-    if WaffleHouseDB.vignetteRadarHideWhenEmpty == nil then
-        WaffleHouseDB.vignetteRadarHideWhenEmpty = true
-    end
-    local radarRange = tonumber(WaffleHouseDB.vignetteRadarRange)
-    if radarRange ~= 150 and radarRange ~= 300 and radarRange ~= 450 and radarRange ~= 600 then
-        WaffleHouseDB.vignetteRadarRange = 450
-    end
     if WaffleHouseDB.wonderbarReorderMode == nil then
         WaffleHouseDB.wonderbarReorderMode = false
     end
@@ -806,7 +796,7 @@ local function BuildOptionsConfig()
     return {
         title = "Waffle House",
         description = "|cff7f7f7fEnhancing your |r|cff18d19eEllesmereUI|r|cff7f7f7f with |r|cff6fe4cbQuality of Life|r|cff7f7f7f Goodness...|r",
-        searchTerms = "vendor bag merchant currency cost legend shopping list easy access item view list rows frozen slot freeze modifier lock sort main bags frosted marker interact key ignored vendor npc ethereal soul trader tool rack chooser choice celestial carver energy splinter arcanic precision empyrean zapper primary stat haste mastery critical strike companion pet summon wonderbar databar data bar drag reorder entries item queue zygor automation auto skip quest gossip dialogue campaign cinematic repair sell junk modifier reverse mode buff check raid party missing assignment beacon earth shield fortitude intellect skyfury bronze buff frame anchor collapse expand own cast timer rules adventure ritual ritual sites delve delves dungeon dungeons raid raids trusty delve companion valeera sanguinar curio curios combat utility bilespear dreamcatcher mute voice dialogue sound vignette radar minimap rare treasure event blip dot range",
+        searchTerms = "vendor bag merchant currency cost legend shopping list easy access item view list rows frozen slot freeze modifier lock sort main bags frosted marker interact key ignored vendor npc ethereal soul trader tool rack chooser choice celestial carver energy splinter arcanic precision empyrean zapper primary stat haste mastery critical strike companion pet summon wonderbar databar data bar drag reorder entries item queue zygor automation auto skip quest gossip dialogue campaign cinematic repair sell junk modifier reverse mode buff check raid party missing assignment beacon earth shield fortitude intellect skyfury bronze buff frame anchor collapse expand own cast timer rules adventure ritual ritual sites delve delves dungeon dungeons raid raids trusty delve companion valeera sanguinar curio curios combat utility bilespear dreamcatcher mute voice dialogue sound",
         pages = { "General", "Adventure", "Automation", "Bags", "Item Queue", "Vendor" },
         buildPage = function(pageName, parent, yOffset)
             if pageName == "Adventure" then

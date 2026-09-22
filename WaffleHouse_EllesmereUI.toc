@@ -11,9 +11,6 @@
 WaffleHouse_EllesmereUI.lua
 WaffleHouse_VendorOptions.lua
 WaffleHouse_VendorStack.lua
-WaffleHouse_VignetteRadarLegend.lua
-WaffleHouse_VignetteRadarTargetPicker.lua
-WaffleHouse_VignetteRadar.lua
 WaffleHouse_Adventure.lua
 WaffleHouse_SoireeRules.lua
 WaffleHouse_Soiree.lua
