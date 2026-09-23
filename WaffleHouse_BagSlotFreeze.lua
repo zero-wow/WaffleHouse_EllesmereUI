@@ -815,7 +815,10 @@ function addon.BuildBagsPage(parent, yOffset)
             text = "Include Guild Bank",
             tooltip = "Opt in to Guild Bank organization when it is open and your guild permissions permit it. Guild moves still require a click.",
             getValue = function() return GetSettings().bagAssistantIncludeGuildBank == true end,
-            setValue = function(value) GetSettings().bagAssistantIncludeGuildBank = value and true or false end,
+            setValue = function(value)
+                GetSettings().bagAssistantIncludeGuildBank = value and true or false
+                if addon.RefreshBagAssistant then addon.RefreshBagAssistant() end
+            end,
         }
     ); y = y - h
     return math.abs(y)

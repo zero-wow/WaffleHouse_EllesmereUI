@@ -1291,6 +1291,7 @@ AdvanceAssistant = function()
         SetMenuNotice(message)
     end
     if task == "organize" or task == "deposit" or task == "warband"
+        or task == "categorize"
         or task == "sort_bags" or task == "sort_character" or task == "sort_warband"
         or task == "guild_organize" or task == "guild_move" then
         pendingActionUntil = GetTime and (GetTime() + 0.8) or nil
