@@ -710,12 +710,96 @@ test("purchase grid redraws restore list and preserve scroll before host clamp",
     end
 end)
 
+test("vendor switch repairs a late host grid redraw and refreshes currency rows", function()
+    local state = fixture()
+    local frame = state.frame
+    local host = {}
+    host.RefreshEUILayout = function()
+        -- The host can finish a fresh merchant render after Waffle House's
+        -- event refresh. Its native layout reclaims the toolbar and grid.
+        frame.ScrollFrame:ClearAllPoints()
+        frame.ScrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 160, -36)
+        for index, button in ipairs(state.buttons) do
+            local slot = button.SlotParent
+            slot:ClearAllPoints()
+            slot:SetPoint("TOPLEFT", frame.ScrollChild, "TOPLEFT", 8 + (index - 1) * 38, -30)
+            slot:SetSize(34, 34)
+            button.icon:SetAllPoints(button)
+            state.headers[index]:Show()
+        end
+    end
+    state.env.EllesmereUIVendorBag = host
+    state.addon.Refresh()
+    assertList(state)
+
+    state.entries[1] = {id = 901, name = "Amani Hide Cutter", price = 0}
+    state.entries[2] = {id = 902, name = "Amani Log Splitter", price = 0}
+    state.env.GetMerchantItemCostItem = function()
+        return 54321, 800, "currency:9", "Unalloyed Abundance"
+    end
+    for index, button in ipairs(state.buttons) do
+        button._link = state.env.GetMerchantItemLink(index)
+    end
+    host.RefreshEUILayout()
+
+    assertList(state)
+    local toolbar = state:toolbar()
+    equal(select(2, frame.ScrollFrame:GetPoint(1)), toolbar,
+        "currency panel must own the scroll-frame top after merchant switch")
+    check(frame._waffleListHeader:GetTop() < toolbar:GetBottom(),
+        "column headers must sit below the currency panel")
+    equal(toolbar.rows[1]._currencyName, "Unalloyed Abundance",
+        "merchant switch must replace the previous currency")
+    check(toolbar.rows[1]:IsShown(), "the new merchant currency must be visible")
+    equal(state.buttons[1]._waffleListName:GetText(), "Amani Hide Cutter",
+        "reused list rows must display the new merchant's items")
+end)
+
+test("shorter vendor never revives pooled items hidden by the previous filter", function()
+    local state = fixture()
+    local frame = state.frame
+    local host = {}
+    host.RefreshEUILayout = function()
+        frame._slotOffset = #state.entries
+        frame.ScrollFrame:ClearAllPoints()
+        frame.ScrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 160, -36)
+        for index, button in ipairs(state.buttons) do
+            button:SetShown(index <= frame._slotOffset)
+            button.SlotParent:SetShown(index <= frame._slotOffset)
+            state.headers[index]:SetShown(index <= frame._slotOffset)
+        end
+    end
+    state.env.EllesmereUIVendorBag = host
+    state.addon.Refresh()
+    state.settings.legendSavedOnly = true
+    state.addon.Refresh()
+    check(state.buttons[2]._waffleCurrencyFilterApplied,
+        "previous merchant's filtered pooled button must exercise the stale-state path")
+
+    state.entries = {{id = 903, name = "One New Item", price = 0}}
+    state.buttons[1]._link = state.env.GetMerchantItemLink(1)
+    host.RefreshEUILayout()
+    check(not state.buttons[2]:IsShown() and not state.buttons[2].SlotParent:IsShown(),
+        "unused pooled item must remain hidden after merchant change")
+    check(not state.buttons[2]._waffleListApplied,
+        "unused pooled item must release the previous merchant's list styling")
+    state.settings.legendSavedOnly = false
+    state.addon.Refresh()
+    assertList(state)
+    check(state.buttons[1]:IsShown() and not state.buttons[2]:IsShown(),
+        "clearing the filter must restore only the current merchant's item")
+    equal(state.buttons[1]._waffleListName:GetText(), "One New Item")
+end)
+
 test("saved-only empty state clears stale rows and remains below column header", function()
     local state = fixture()
     state.addon.Refresh()
     state:toolbar().saved:Fire("OnClick")
     check(state.settings.legendSavedOnly, "saved-only toggle must run actual filter path")
     for _, button in ipairs(state.buttons) do check(not button:IsVisible(), "unsaved row must hide") end
+    for _, button in ipairs(state.buttons) do
+        check(not button._waffleListApplied, "hidden pooled buttons must release old list decorations")
+    end
     check(state.frame.EmptyLabel:IsShown(), "empty list must show native empty label")
     check(state.frame.EmptyLabel:GetTop() < state.frame._waffleListHeader:GetBottom() - 4, "empty copy must clear column header")
     state:toolbar().saved:Fire("OnClick")

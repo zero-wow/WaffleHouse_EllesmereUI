@@ -6030,8 +6030,10 @@ local function ApplyEasyAccessItemList(frame, buttons, costsByMerchant)
         end
     end
 
+    local visibleSet = {}
+    for _, button in ipairs(visible) do visibleSet[button] = true end
     for _, button in ipairs(buttons) do
-        if not button._waffleListApplied then
+        if not visibleSet[button] and button._waffleListApplied then
             RestoreVendorListButton(button, costsByMerchant[button._merchantIndex] or {})
         end
     end
@@ -6098,16 +6100,60 @@ function addon.GuardVendorPurchase(button)
 end
 
 local function FindVendorButtons(frame)
-    local buttons = {}
-    if not (frame and frame.ScrollChild) then return buttons end
+    local buttons, unused = {}, {}
+    if not (frame and frame.ScrollChild) then return buttons, unused end
 
+    -- Vendor Bags pools slots across merchants. _merchantIndex is not cleared
+    -- when a shorter merchant hides an old slot, so it is not proof that the
+    -- button belongs to the current dataset.
+    local usedSlots = IsSafeNumber(frame._slotOffset) and frame._slotOffset or nil
+    local slotIndex = 0
     for _, slotParent in ipairs({ frame.ScrollChild:GetChildren() }) do
         local button = slotParent:GetChildren()
         if button and IsSafeNumber(button._merchantIndex) then
-            buttons[#buttons + 1] = button
+            slotIndex = slotIndex + 1
+            local target = (not usedSlots or slotIndex <= usedSlots) and buttons or unused
+            target[#target + 1] = button
         end
     end
-    return buttons
+    return buttons, unused
+end
+
+local function ResetVendorFilterHostVisibility(frame)
+    local active, unused = FindVendorButtons(frame)
+    for _, button in ipairs(active) do
+        button._waffleCurrencyFilterApplied = nil
+        button._waffleCurrencyFilterWasVisible = nil
+    end
+    for _, button in ipairs(unused) do
+        button._waffleCurrencyFilterApplied = nil
+        button._waffleCurrencyFilterWasVisible = nil
+    end
+end
+
+local function VendorListLayoutNeedsRefresh(frame)
+    if not (frame and frame.ScrollChild and frame.ScrollFrame) then return false end
+    local header = frame._waffleListHeader
+    if not (header and header:IsShown()) then return true end
+    local _, scrollAnchor = frame.ScrollFrame:GetPoint(1)
+    if scrollAnchor ~= panel then return true end
+    for _, child in ipairs({ frame.ScrollChild:GetChildren() }) do
+        if child.label and child.line and child:IsShown() then return true end
+    end
+    local rowWidth = math.max(1, math.floor(frame.ScrollChild:GetWidth() or 0) - 6)
+    for _, button in ipairs(FindVendorButtons(frame)) do
+        if button:IsShown() and (button.SlotParent or button:GetParent()):IsShown() then
+            local slot = button.SlotParent or button:GetParent()
+            local point, relative, relativePoint, x, y = slot:GetPoint(1)
+            if not button._waffleListApplied or point ~= "TOPLEFT" or relative ~= frame.ScrollChild
+                or relativePoint ~= "TOPLEFT" or x ~= 3
+                or y ~= -(LIST_HEADER_H + 3 + ((button._waffleListIndex or 0) - 1) * LIST_ROW_H)
+                or math.abs(slot:GetWidth() - rowWidth) > 0.5 then
+                return true
+            end
+        end
+    end
+    return false
 end
 
 local function WireRefreshTriggers(frame)
@@ -6129,9 +6175,30 @@ local function WireRefreshTriggers(frame)
                 frame._waffleListRefreshAfterResize = true
                 return
             end
+            ResetVendorFilterHostVisibility(frame)
             addon.Refresh()
         end)
         frame._euvxListRenderHooked = true
+    end
+    if not frame._waffleHostVendorRefreshHooked then
+        local vendorHost = _G.EllesmereUIVendorBag
+        if vendorHost and type(vendorHost.RefreshEUILayout) == "function" then
+            -- The host can rebuild its pooled grid after our own event refresh.
+            -- Recheck the final render, including the currency-panel anchor,
+            -- rather than leaving list decorations on grid-positioned slots.
+            hooksecurefunc(vendorHost, "RefreshEUILayout", function()
+                if not frame:IsShown() then return end
+                if GetSettings().vendorItemView == "list" and not frame._waffleListApplying
+                    and VendorListLayoutNeedsRefresh(frame) then
+                    ResetVendorFilterHostVisibility(frame)
+                    addon.Refresh()
+                elseif GetSettings().vendorItemView ~= "list" then
+                    ResetVendorFilterHostVisibility(frame)
+                    addon.Refresh()
+                end
+            end)
+            frame._waffleHostVendorRefreshHooked = true
+        end
     end
     if frame.SearchBox and not frame.SearchBox._euvxRefreshHooked then
         frame.SearchBox:HookScript("OnTextChanged", QueueRefresh)
@@ -6156,7 +6223,12 @@ function addon.Refresh()
     if not (frame and frame:IsShown() and frame.ScrollChild and frame.ScrollFrame and frame.Footer) then return end
     if frame._waffleListApplying then return end
 
-    local buttons = FindVendorButtons(frame)
+    local buttons, unusedButtons = FindVendorButtons(frame)
+    for _, button in ipairs(unusedButtons) do
+        if button._waffleListApplied then RestoreVendorListButton(button, {}) end
+        button._waffleCurrencyFilterApplied = nil
+        button._waffleCurrencyFilterWasVisible = nil
+    end
     -- Install purchase protection before layout or optional item decorations
     -- can fail, and before the live-resize path defers presentation updates.
     for _, button in ipairs(buttons) do addon.GuardVendorPurchase(button) end
