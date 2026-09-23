@@ -32,6 +32,7 @@ local production = source:sub(1, assert(source:find("local function GetNPCIDFrom
     .. section("local function IsTextMode()", "-- EllesmereUI owns the confirmation popup")
     .. section("local function GetVendorPlanner()", "local function GetItemQueueSettings()")
     .. section("local function IsSafeValue", "local function NormalizeItemQueueTooltipText")
+    .. section("local function TooltipShowsMaxedCount", "local function IsCompletedQueueItem")
     .. section("local function GetMerchantCosts", "local zygorPointerSkin")
     .. "\nreturn addon\n"
 
@@ -130,6 +131,9 @@ function Object:IsShown() return self.shown end
 function Object:IsVisible() return self.shown and (not self.parent or self.parent:IsVisible()) end
 function Object:SetShown(value) if value then self:Show() else self:Hide() end end
 function Object:SetFrameLevel(value) self.level = value end
+function Object:SetFrameStrata(value) self.strata = value end
+function Object:SetClampedToScreen(value) self.clamped = value end
+function Object:IsMouseOver() return self.mouseOver == true end
 function Object:GetFrameLevel() return self.level or (self.parent and self.parent:GetFrameLevel() + 1) or 1 end
 function Object:SetFont(font, size, flags) self.font, self.fontSize, self.fontFlags = font, size, flags end
 function Object:GetFont() return self.font or "mock-font", self.fontSize or 10, self.fontFlags or "OUTLINE" end
@@ -147,8 +151,11 @@ function Object:GetAlpha() return self.alpha or 1 end
 function Object:SetVerticalScroll(value) self.scroll = value end
 function Object:GetVerticalScroll() return self.scroll or 0 end
 function Object:GetVerticalScrollRange() return math.max(0, self.ScrollChild:GetHeight() - self:GetHeight()) end
-for _, name in ipairs({"EnableMouse", "RegisterForDrag", "RegisterForClicks", "SetPropagateMouseClicks", "SetWordWrap", "SetMaxLines", "SetTexCoord"}) do
+for _, name in ipairs({"EnableMouse", "RegisterForDrag", "RegisterForClicks", "SetWordWrap", "SetMaxLines", "SetTexCoord"}) do
     Object[name] = function() end
+end
+function Object:SetPropagateMouseClicks()
+    error("protected SetPropagateMouseClicks must not run during vendor refresh", 2)
 end
 
 local function secretOperation() error("attempt to transform a secret NPC identity", 2) end
@@ -201,10 +208,26 @@ local function fixture(options)
         return entry and ("|cff0070dd|Hitem:" .. entry.id .. "|h[" .. entry.name .. "]|h|r")
     end
     env.GetMoney = function() return 10000 end
+    env.PlayerHasToy = function(itemID) return options.knownToyIDs and options.knownToyIDs[itemID] == true or false end
     env.GetCoinTextureString = function(value) return tostring(value) .. " copper" end
     env.GetItemInfo = function() return "Item", nil, 3, nil, nil, "Armor", "Plate" end
     env.GetItemQualityColor = function() return 0, 0.44, 0.87 end
     env.C_CurrencyInfo = {GetCurrencyInfo = function() return {quantity = 50} end}
+    if options.factions then
+        env.C_MajorFactions = {
+            GetMajorFactionIDs = function()
+                local ids = {}
+                for index = 1, #options.factions do ids[index] = index end
+                return ids
+            end,
+            GetMajorFactionData = function(index) return options.factions[index] end,
+        }
+    end
+    env.C_TooltipInfo = {GetMerchantItem = function(index)
+        local entry = state.entries[index]
+        if not entry or not entry.tooltip then return nil end
+        return {lines = {{leftText = entry.name}, {leftText = entry.tooltip}}}
+    end}
     env.C_Item = {GetItemInfo = env.GetItemInfo, GetItemInfoInstant = function() return 101, nil, nil, nil, nil, 4, 4 end}
     env.EllesmereUI = {MakeBorder = function() return {SetColor = function() end} end}
     local frame = newObject("Frame", env.UIParent)
@@ -294,6 +317,23 @@ local function assertList(state)
             check(button._wafflePlannerControl:IsShown(), "planner pin must remain interactive")
         end
     end
+end
+
+-- This models Vendor Bags' renderer order: it reanchors pooled grid slots,
+-- writes the final content height, then clamps the current scroll position.
+-- The height write is Waffle House's only post-render hook, so a list reflow
+-- must complete before this function returns.
+local function renderNativeVendorGrid(state, contentHeight)
+    local frame = state.frame
+    for index, button in ipairs(state.buttons) do
+        button.SlotParent:ClearAllPoints()
+        button.SlotParent:SetPoint("TOPLEFT", frame.ScrollChild, "TOPLEFT", 8 + (index - 1) * 38, -30)
+        button.SlotParent:SetSize(34, 34)
+        button.icon:SetAllPoints(button)
+        state.headers[index]:Show()
+    end
+    frame.ScrollChild:SetHeight(contentHeight)
+    frame.ScrollFrame:SetVerticalScroll(math.min(frame.ScrollFrame:GetVerticalScroll(), frame.ScrollFrame:GetVerticalScrollRange()))
 end
 
 local passed, failures = 0, {}
@@ -620,8 +660,8 @@ test("pooled render and resize defer until final host pass then refresh list", f
     check(frame._waffleListRefreshAfterResize, "resize must record deferred refresh")
     frame._liveWindowWidth = nil
     frame.ScrollChild:SetHeight(100)
-    state:flush()
     assertList(state)
+    equal(#state.timers, 0, "release render must not leave a deferred list reflow")
     check(not frame._waffleListHeader.columnControls.type:IsShown(), "narrow layout must collapse type column")
     check(not frame._waffleListRefreshAfterResize, "final render must clear deferred refresh")
     local top = state.buttons[1]:GetTop()
@@ -635,6 +675,41 @@ test("pooled render and resize defer until final host pass then refresh list", f
     assertList(state)
 end)
 
+test("purchase grid redraws restore list and preserve scroll before host clamp", function()
+    local entries = {}
+    for index = 1, 12 do
+        entries[index] = {id = 100 + index, name = "Purchase row " .. index, price = 0}
+    end
+    local state = fixture({entries = entries})
+    state.addon.Refresh()
+    local frame = state.frame
+    frame.ScrollFrame:SetVerticalScroll(31)
+
+    -- A purchase produces BAG_UPDATE while Vendor Bags repeatedly redraws its
+    -- pooled grid.  Each final height update must restore the list immediately,
+    -- before the native renderer clamps the current scroll value.
+    state.buttons[1]:Fire("OnClick", "LeftButton")
+    equal(state.purchases, 1, "purchase must still reach the native click handler")
+    for pass = 1, 3 do
+        renderNativeVendorGrid(state, 720 - pass * 40)
+        assertList(state)
+        equal(frame.ScrollFrame:GetVerticalScroll(), 31,
+            "host scroll clamp must preserve the current list position after redraw " .. pass)
+        equal(#state.timers, 0, "host redraw " .. pass .. " must not leave a list refresh queued")
+    end
+
+    -- Switching to grid after a purchase must leave Vendor Bags' pooled layout
+    -- untouched; the list renderer may only recover the list view.
+    state.settings.vendorItemView = "grid"
+    state.addon.Refresh()
+    renderNativeVendorGrid(state, 600)
+    for index, button in ipairs(state.buttons) do
+        check(not button._waffleListApplied, "grid view must restore native pooled slot " .. index)
+        near(button.SlotParent:GetWidth(), 34, "grid slot must retain native width " .. index)
+        check(state.headers[index]:IsShown(), "grid category header must remain native " .. index)
+    end
+end)
+
 test("saved-only empty state clears stale rows and remains below column header", function()
     local state = fixture()
     state.addon.Refresh()
@@ -646,6 +721,88 @@ test("saved-only empty state clears stale rows and remains below column header",
     state:toolbar().saved:Fire("OnClick")
     check(not state.frame.EmptyLabel:IsShown(), "restoring results must hide empty copy")
     assertList(state)
+end)
+
+test("RENOWN filters only confirmed unmet requirements in both vendor views", function()
+    for _, view in ipairs({"grid", "list"}) do
+        local state = fixture({view = view,
+            factions = {{name = "Silvermoon Court", renownLevel = 10}},
+            entries = {
+                {id = 101, name = "Fiery Dragonhawk", price = 0, tooltip = "Requires Renown Rank 19 with the Silvermoon Court."},
+                {id = 102, name = "Available Reward", price = 0, tooltip = "Requires Renown Rank 10 with the Silvermoon Court."},
+                {id = 103, name = "Other Faction", price = 0, tooltip = "Requires Renown Rank 19 with the Unknown Court."},
+                {id = 104, name = "Unrestricted Reward", price = 0, tooltip = "Some other requirement."},
+                {id = 105, name = "Unreadable Reward", price = 0, tooltip = SECRET_NAME},
+            },
+        })
+        state.addon.Refresh()
+        state:toolbar().hide:Fire("OnClick")
+        local menu = state:toolbar().hideMenu
+        check(menu:IsShown(), "HIDE action must open its own option menu")
+        menu.rows[2]:Fire("OnClick")
+        check(state.settings.legendHideRenownLocked, "RENOWN control must persist its setting")
+        check(not state.buttons[1]:IsVisible(), "unmet Silvermoon Court renown must hide the item")
+        for index = 2, 5 do check(state.buttons[index]:IsVisible(), "known-satisfied or unknown rank must stay visible") end
+        state.env.C_MajorFactions.GetMajorFactionData = function() return {name = "Silvermoon Court", renownLevel = 19} end
+        state.addon.Refresh()
+        check(state.buttons[1]:IsVisible(), "reaching the required rank must restore the reward")
+        menu.rows[2]:Fire("OnClick")
+        for _, button in ipairs(state.buttons) do check(button:IsVisible(), "turning RENOWN off must restore all items") end
+    end
+end)
+
+test("renown filter leaves items visible when faction data is unavailable", function()
+    local state = fixture({entries = {{id = 101, name = "Fiery Dragonhawk", tooltip = "Requires Renown Rank 19 with the Silvermoon Court."}}})
+    state.addon.Refresh()
+    state:toolbar().hide:Fire("OnClick")
+    state:toolbar().hideMenu.rows[2]:Fire("OnClick")
+    check(state.buttons[1]:IsVisible(), "missing faction API must fail open")
+end)
+
+test("HIDE menu combines Known and Renown without treating them as one filter", function()
+    local state = fixture({
+        factions = {{name = "Silvermoon Court", renownLevel = 10}},
+        knownToyIDs = {[104] = true},
+        entries = {
+            {id = 101, name = "Learned Recipe", tooltip = "Already Known"},
+            {id = 102, name = "Fiery Dragonhawk", tooltip = "Requires Renown Rank 19 with the Silvermoon Court."},
+            {id = 103, name = "Other Reward", tooltip = "Requires Level 90"},
+            {id = 104, name = "Collected Toy"},
+            {id = 105, name = "Unreadable Reward", tooltip = SECRET_NAME},
+        },
+    })
+    state.addon.Refresh()
+    local toolbar = state:toolbar()
+    check(toolbar.hide._waffleHideIcon.texture:find("eui%-visible%.png"), "open-eye icon must represent no active hide rules")
+    near(toolbar.hide._waffleHideIcon:GetWidth(), 16, "eye asset padding needs a full-size visible mark")
+    toolbar.hide:Fire("OnClick")
+    local menu = toolbar.hideMenu
+    check(menu:IsShown() and menu.clamped, "HIDE must open a screen-clamped anchored menu")
+    for _, row in ipairs(menu.rows) do
+        check(row:GetLeft() >= menu:GetLeft() + 10 and row:GetRight() <= menu:GetRight() - 10,
+            "menu choice must keep its horizontal gutters")
+        check(row:GetTop() <= menu:GetTop() - 34 and row:GetBottom() >= menu:GetBottom() + 11,
+            "menu choice must stay inside its vertical padding")
+    end
+    menu.rows[1]:Fire("OnClick")
+    check(state.settings.legendHideKnown and not state.settings.legendHideRenownLocked, "Known is independently configurable")
+    check(not state.buttons[1]:IsVisible() and not state.buttons[4]:IsVisible(), "learned recipe and collected toy must hide")
+    check(state.buttons[2]:IsVisible() and state.buttons[3]:IsVisible() and state.buttons[5]:IsVisible(),
+        "renown lock, unrelated requirement, and secret tooltip stay visible")
+    check(toolbar.hide._waffleHideIcon.texture:find("eui%-invisible%.png"), "closed-eye icon must represent active hiding")
+    menu.rows[2]:Fire("OnClick")
+    check(not state.buttons[2]:IsVisible(), "Renown choice must combine with Known")
+    menu.rows[1]:Fire("OnClick")
+    check(state.buttons[1]:IsVisible() and state.buttons[4]:IsVisible(), "disabling Known restores its own items")
+    check(not state.buttons[2]:IsVisible(), "Renown choice must remain active")
+    menu.rows[2]:Fire("OnClick")
+    check(toolbar.hide._waffleHideIcon.texture:find("eui%-visible%.png"), "eye must reopen when no hide rule is active")
+    toolbar.hide:Fire("OnClick")
+    check(not menu:IsShown(), "clicking HIDE again must close its menu")
+    toolbar.hide:Fire("OnClick")
+    state.mouseDown = true
+    menu:Fire("OnUpdate")
+    check(not menu:IsShown(), "clicking outside must close the menu")
 end)
 
 test("currency-free vendors still reach list renderer and keep view toggle available", function()

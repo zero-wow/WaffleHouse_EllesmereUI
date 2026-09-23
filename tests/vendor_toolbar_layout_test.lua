@@ -10,7 +10,7 @@
 local SOURCE = arg[1] or "WaffleHouse_EllesmereUI.lua"
 local file, err = io.open(SOURCE, "rb")
 assert(file, "could not open " .. SOURCE .. ": " .. tostring(err))
-local source = file:read("*a")
+local source = file:read("*a"):gsub("\r\n", "\n")
 file:close()
 
 local startAt = assert(source:find("function addon%.LayoutVendorToolbar%("), "missing toolbar layout function")
@@ -67,13 +67,14 @@ local function CreateControl(name, width, action)
     return control
 end
 
-local order = { "list", "saved", "plan", "afford", "filter", "mode" }
-local actionControls = { plan = true, mode = true }
+local order = { "list", "saved", "plan", "afford", "hide", "filter", "mode" }
+local actionControls = { plan = true, hide = true, mode = true }
 local baseWidths = {
     list = 24,
     saved = 35,
     plan = 24,
     afford = 39,
+    hide = 24,
     filter = 35,
 }
 

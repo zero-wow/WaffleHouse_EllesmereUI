@@ -1,6 +1,6 @@
 local sourcePath = arg[1] or "WaffleHouse_EllesmereUI.lua"
 local file = assert(io.open(sourcePath, "rb"))
-local source = assert(file:read("*a"))
+local source = assert(file:read("*a")):gsub("\r\n", "\n")
 file:close()
 
 local startAt = assert(source:find("function addon%.GetCurrencyAccentColor%(") , "missing stable currency accent helper")

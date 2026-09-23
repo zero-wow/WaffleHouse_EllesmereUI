@@ -14,7 +14,7 @@ local function readFile(path)
     assert(file, "could not open " .. path .. ": " .. tostring(err))
     local text = file:read("*a")
     file:close()
-    return text
+    return text:gsub("\r\n", "\n")
 end
 
 local function extractFunction(source, name)

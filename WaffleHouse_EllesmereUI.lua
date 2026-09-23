@@ -115,6 +115,12 @@ local function GetSettings()
     if WaffleHouseDB.legendAffordableOnly == nil then
         WaffleHouseDB.legendAffordableOnly = false
     end
+    if WaffleHouseDB.legendHideRenownLocked == nil then
+        WaffleHouseDB.legendHideRenownLocked = false
+    end
+    if WaffleHouseDB.legendHideKnown == nil then
+        WaffleHouseDB.legendHideKnown = false
+    end
     if WaffleHouseDB.legendSavedOnly == nil then
         WaffleHouseDB.legendSavedOnly = false
     end
@@ -274,17 +280,22 @@ local function EnsureIgnoredInteractBindingFrames()
     -- The click intentionally has no action.  A temporary override to this
     -- button consumes only the Interact With Target press for an ignored NPC.
     ignoredInteractBindingOwner:SetAttribute("_onstate-combat", [[
+        local inCombat = self:GetAttribute("waffleIgnoreInCombat")
+        local outOfCombat = self:GetAttribute("waffleIgnoreOutOfCombat")
+        -- When both phases block Interact, keep the working binding across
+        -- the combat transition instead of tearing it down and rebuilding it.
+        if inCombat and outOfCombat then return end
         self:ClearBindings()
-        local enabled = (newstate == "combat" and self:GetAttribute("waffleIgnoreInCombat"))
-            or (newstate == "peace" and self:GetAttribute("waffleIgnoreOutOfCombat"))
+        local enabled = (newstate == "combat" and inCombat)
+            or (newstate == "peace" and outOfCombat)
         if enabled then
             local key1 = self:GetAttribute("waffleInteractKey1")
             local key2 = self:GetAttribute("waffleInteractKey2")
             if key1 and key1 ~= "" then
-                self:SetBindingClick(false, key1, "WaffleHouseIgnoredInteractBlocker", "LeftButton")
+                self:SetBindingClick(true, key1, "WaffleHouseIgnoredInteractBlocker", "LeftButton")
             end
             if key2 and key2 ~= "" and key2 ~= key1 then
-                self:SetBindingClick(false, key2, "WaffleHouseIgnoredInteractBlocker", "LeftButton")
+                self:SetBindingClick(true, key2, "WaffleHouseIgnoredInteractBlocker", "LeftButton")
             end
         end
     ]])
@@ -315,7 +326,7 @@ UpdateIgnoredInteractBinding = function()
 
     for _, key in pairs({ key1, key2 }) do
         if type(key) == "string" and key ~= "" then
-            SetOverrideBindingClick(ignoredInteractBindingOwner, false, key,
+            SetOverrideBindingClick(ignoredInteractBindingOwner, true, key,
                 "WaffleHouseIgnoredInteractBlocker", "LeftButton")
         end
     end
@@ -916,6 +927,33 @@ local function BuildOptionsConfig()
                     end,
                     setValue = function(value)
                         GetSettings().vendorTooltipDetails = value and true or false
+                        if addon.Refresh then addon.Refresh() end
+                    end,
+                }
+            ); y = y - h
+
+            _, h = W:DualRow(parent, y,
+                {
+                    type = "toggle",
+                    text = "Hide Known Vendor Items",
+                    tooltip = "At a merchant, hide collectibles whose tooltip confirms they are already learned, known, or collected.",
+                    getValue = function()
+                        return GetSettings().legendHideKnown == true
+                    end,
+                    setValue = function(value)
+                        GetSettings().legendHideKnown = value and true or false
+                        if addon.Refresh then addon.Refresh() end
+                    end,
+                },
+                {
+                    type = "toggle",
+                    text = "Hide Renown-Locked Items",
+                    tooltip = "At a merchant, hide items whose listed renown rank is higher than your current rank with that faction. Items with unavailable requirement data remain visible.",
+                    getValue = function()
+                        return GetSettings().legendHideRenownLocked == true
+                    end,
+                    setValue = function(value)
+                        GetSettings().legendHideRenownLocked = value and true or false
                         if addon.Refresh then addon.Refresh() end
                     end,
                 }
@@ -3522,6 +3560,16 @@ function addon.CreatePanelActionIcon(button, kind)
         pin:SetAllPoints()
         pin:SetTexture("Interface\\AddOns\\WaffleHouse_EllesmereUI\\Media\\vendor-pin-off.tga")
         button._waffleActionIconParts[#button._waffleActionIconParts + 1] = pin
+    elseif kind == "hide" then
+        local eye = anchor:CreateTexture(nil, "ARTWORK")
+        -- EllesmereUI's 30px eye assets include transparent padding; 16px
+        -- gives the visible mark the same weight as the 12px PLAN pin.
+        eye:SetSize(16, 16)
+        eye:SetPoint("CENTER", anchor, "CENTER")
+        eye:SetTexture(EllesmereUI and EllesmereUI.EYE_VISIBLE_ICON
+            or "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-visible.png")
+        button._waffleHideIcon = eye
+        button._waffleActionIconParts[#button._waffleActionIconParts + 1] = eye
     elseif kind == "mode" then
         -- Three short strokes read as a text/list-mode mark even at the
         -- deliberately small vendor-header scale.
@@ -3559,6 +3607,111 @@ function addon.SetPanelActionColor(button, r, g, b)
             part:SetTextColor(r, g, b, 1)
         end
     end
+end
+
+function addon.EnsureVendorHideMenu(legend)
+    if legend.hideMenu then return legend.hideMenu end
+    local menu = CreateFrame("Frame", nil, legend)
+    menu:SetSize(226, 103)
+    menu:SetFrameStrata("DIALOG")
+    menu:SetFrameLevel(legend:GetFrameLevel() + 30)
+    if menu.SetClampedToScreen then menu:SetClampedToScreen(true) end
+    menu:SetPoint("TOPRIGHT", legend.hide, "BOTTOMRIGHT", 0, -5)
+    menu:EnableMouse(true)
+    local background = menu:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints()
+    background:SetColorTexture(0.055, 0.065, 0.075, 0.97)
+    for _, edge in ipairs({
+        { "TOPLEFT", "TOPRIGHT", 1 }, { "BOTTOMLEFT", "BOTTOMRIGHT", 1 },
+        { "TOPLEFT", "BOTTOMLEFT", 1, true }, { "TOPRIGHT", "BOTTOMRIGHT", 1, true },
+    }) do
+        local line = menu:CreateTexture(nil, "BORDER")
+        if edge[4] then line:SetWidth(edge[3]) else line:SetHeight(edge[3]) end
+        line:SetPoint(edge[1], menu, edge[1])
+        line:SetPoint(edge[2], menu, edge[2])
+        line:SetColorTexture(0.30, 0.39, 0.40, 0.95)
+    end
+    local title = menu:CreateFontString(nil, "OVERLAY")
+    SetFont(title, 9)
+    title:SetPoint("TOPLEFT", menu, "TOPLEFT", 12, -10)
+    title:SetText("HIDE VENDOR ITEMS")
+    title:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+    local divider = menu:CreateTexture(nil, "ARTWORK")
+    divider:SetHeight(1)
+    divider:SetPoint("TOPLEFT", menu, "TOPLEFT", 10, -28)
+    divider:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -10, -28)
+    divider:SetColorTexture(0.40, 0.48, 0.49, 0.35)
+
+    menu.rows = {}
+    for index, info in ipairs({
+        { key = "legendHideKnown", label = "Already known" },
+        { key = "legendHideRenownLocked", label = "Renown locked" },
+    }) do
+        local row = CreateFrame("Button", nil, menu)
+        row:SetSize(206, 27)
+        row:SetPoint("TOPLEFT", menu, "TOPLEFT", 10, -34 - ((index - 1) * 30))
+        row._key = info.key
+        row._background = row:CreateTexture(nil, "BACKGROUND")
+        row._background:SetAllPoints()
+        row._box = row:CreateTexture(nil, "ARTWORK")
+        row._box:SetSize(12, 12)
+        row._box:SetPoint("LEFT", row, "LEFT", 5, 0)
+        row._check = row:CreateTexture(nil, "OVERLAY")
+        row._check:SetSize(16, 16)
+        row._check:SetPoint("CENTER", row._box, "CENTER")
+        row._check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+        row.label = row:CreateFontString(nil, "OVERLAY")
+        SetFont(row.label, 10)
+        row.label:SetPoint("LEFT", row._box, "RIGHT", 9, 0)
+        row.label:SetPoint("RIGHT", row, "RIGHT", -5, 0)
+        row.label:SetJustifyH("LEFT")
+        row.label:SetText(info.label)
+        row:SetScript("OnEnter", function(self)
+            self._hovering = true
+            self._background:SetColorTexture(1, 1, 1, 0.07)
+            self.label:SetTextColor(1, 1, 1, 1)
+        end)
+        row:SetScript("OnLeave", function(self)
+            self._hovering = nil
+            menu._refresh()
+        end)
+        row:SetScript("OnClick", function(self)
+            local settings = GetSettings()
+            settings[self._key] = not settings[self._key]
+            menu._refresh()
+            addon.UpdateVendorHideControl(legend)
+            if addon.Refresh then addon.Refresh() end
+        end)
+        menu.rows[index] = row
+    end
+    menu._refresh = function()
+        local settings = GetSettings()
+        for _, row in ipairs(menu.rows) do
+            local enabled = settings[row._key] == true
+            row._box:SetColorTexture(enabled and ACCENT_R or 0.025, enabled and ACCENT_G or 0.035, enabled and ACCENT_B or 0.045, enabled and 0.62 or 0.88)
+            row._check:SetShown(enabled)
+            if not row._hovering then
+                row.label:SetTextColor(enabled and ACCENT_R or 0.80, enabled and ACCENT_G or 0.80, enabled and ACCENT_B or 0.80, 1)
+                row._background:SetColorTexture(0, 0, 0, 0)
+            end
+        end
+    end
+    menu:SetScript("OnShow", function(self)
+        self._mouseWasDown = IsMouseButtonDown and IsMouseButtonDown("LeftButton") or false
+        self._refresh()
+    end)
+    menu:SetScript("OnUpdate", function(self)
+        local down = IsMouseButtonDown and IsMouseButtonDown("LeftButton") or false
+        if down and not self._mouseWasDown and self.IsMouseOver and legend.hide.IsMouseOver
+            and not self:IsMouseOver() and not legend.hide:IsMouseOver() then
+            self:Hide()
+        end
+        self._mouseWasDown = down
+    end)
+    legend:HookScript("OnHide", function() menu:Hide() end)
+    menu:Hide()
+    legend.hideMenu = menu
+    return menu
 end
 
 local function EnsurePanel(frame)
@@ -3732,9 +3885,33 @@ local function EnsurePanel(frame)
         if addon.Refresh then addon.Refresh() end
     end)
 
+    panel.hide = CreateFrame("Button", nil, panel)
+    panel.hide:SetSize(47, TITLE_H)
+    panel.hide:SetPoint("RIGHT", panel.afford, "LEFT", -3, 0)
+    panel.hide.label = panel.hide:CreateFontString(nil, "OVERLAY")
+    SetFont(panel.hide.label, 8)
+    panel.hide.label:SetText("HIDE")
+    addon.CreatePanelActionIcon(panel.hide, "hide")
+    panel.hide:SetScript("OnEnter", function(self)
+        self._hovering = true
+        addon.SetPanelActionColor(self, 1, 1, 1)
+        if EllesmereUI and EllesmereUI.ShowWidgetTooltip then
+            EllesmereUI.ShowWidgetTooltip(self, "Choose which vendor items to hide: already known or renown locked.")
+        end
+    end)
+    panel.hide:SetScript("OnLeave", function(self)
+        self._hovering = nil
+        if EllesmereUI and EllesmereUI.HideWidgetTooltip then EllesmereUI.HideWidgetTooltip() end
+        addon.UpdateVendorHideControl(panel)
+    end)
+    panel.hide:SetScript("OnClick", function()
+        local menu = addon.EnsureVendorHideMenu(panel)
+        if menu:IsShown() then menu:Hide() else menu:Show() end
+    end)
+
     panel.plan = CreateFrame("Button", nil, panel)
     panel.plan:SetSize(43, TITLE_H)
-    panel.plan:SetPoint("RIGHT", panel.afford, "LEFT", -3, 0)
+    panel.plan:SetPoint("RIGHT", panel.hide, "LEFT", -3, 0)
     panel.plan.label = panel.plan:CreateFontString(nil, "OVERLAY")
     SetFont(panel.plan.label, 8)
     panel.plan.label:SetText("PLAN")
@@ -3869,6 +4046,22 @@ local function UpdateAffordableFilterControl(legend)
     end
 end
 
+function addon.UpdateVendorHideControl(legend)
+    if not (legend and legend.hide) then return end
+    local settings = GetSettings()
+    local hiding = settings.legendHideKnown == true or settings.legendHideRenownLocked == true
+    if legend.hide._waffleHideIcon then
+        legend.hide._waffleHideIcon:SetTexture(hiding
+            and (EllesmereUI and EllesmereUI.EYE_INVISIBLE_ICON or "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-invisible.png")
+            or (EllesmereUI and EllesmereUI.EYE_VISIBLE_ICON or "Interface\\AddOns\\EllesmereUI\\media\\icons\\eui-visible.png"))
+    end
+    if not legend.hide._hovering then
+        addon.SetPanelActionColor(legend.hide,
+            hiding and ACCENT_R or 0.75, hiding and ACCENT_G or 0.75, hiding and ACCENT_B or 0.75)
+    end
+    if legend.hideMenu and legend.hideMenu:IsShown() then legend.hideMenu._refresh() end
+end
+
 local function UpdateSavedFilterControl(legend)
     if not (legend and legend.saved) then return end
     local enabled = GetSettings().legendSavedOnly == true
@@ -3917,7 +4110,7 @@ function addon.LayoutVendorToolbar(legend, panelWidth)
     local controlGap = 3
     local controlHeight = TITLE_H - 4
     local available = math.max(1, math.floor((panelWidth or legend:GetWidth() or 1) - (outerGutter * 2)))
-    local controls = { legend.list, legend.saved, legend.plan, legend.afford, legend.filter, legend.mode }
+    local controls = { legend.list, legend.saved, legend.plan, legend.afford, legend.hide, legend.filter, legend.mode }
     local widths = {}
     local controlsWidth = 0
     for index, control in ipairs(controls) do
@@ -4100,6 +4293,7 @@ local function LayoutPanel(frame, entries)
     addon.SetPanelActionColor(legend.mode, 0.75, 0.75, 0.75)
     UpdateCurrencyFilterControl(legend)
     UpdateAffordableFilterControl(legend)
+    addon.UpdateVendorHideControl(legend)
     UpdateSavedFilterControl(legend)
     addon.UpdateVendorListViewControl(legend)
     if legend.currencyCollapse then legend.currencyCollapse:SetShown(legend._waffleHasCurrencies) end
@@ -4309,9 +4503,6 @@ local function EnsureVendorPlannerControl(button, costs)
         control:SetPoint("LEFT", button, "RIGHT", 6, 0)
         control:SetFrameLevel(button:GetFrameLevel() + 10)
         control:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        if control.SetPropagateMouseClicks then
-            control:SetPropagateMouseClicks(false)
-        end
         control.icon = control:CreateTexture(nil, "ARTWORK")
         control.icon:SetSize(24, 24)
         control.icon:SetPoint("CENTER")
@@ -4361,12 +4552,94 @@ local function EnsureVendorPlannerControl(button, costs)
     control:Show()
 end
 
-local function ApplyVendorFilters(button, costs)
+-- Merchant tooltip requirements are not part of the item's gold/currency cost.
+-- Compare the explicit renown requirement with the current major-faction rank;
+-- never guess from the generic isPurchasable flag, which covers other locks.
+function addon.GetVendorMerchantTooltip(merchantIndex)
+    if not (IsSafeNumber(merchantIndex) and C_TooltipInfo and C_TooltipInfo.GetMerchantItem) then return end
+    local ok, tooltip = pcall(C_TooltipInfo.GetMerchantItem, merchantIndex)
+    if ok and IsSafeValue(tooltip) and type(tooltip) == "table"
+        and IsSafeValue(tooltip.lines) and type(tooltip.lines) == "table" then
+        return tooltip
+    end
+end
+
+function addon.IsVendorItemKnown(merchantIndex, itemID, tooltip)
+    if IsSafeNumber(itemID) then
+        if PlayerHasToy then
+            local ok, known = pcall(PlayerHasToy, itemID)
+            if ok and IsSafeValue(known) and known == true then return true end
+        end
+        for _, check in ipairs({ IsMountCollected, HasHeirloom }) do
+            local ok, known = pcall(check, itemID)
+            if ok and IsSafeValue(known) and known == true then return true end
+        end
+    end
+    if tooltip == nil then tooltip = addon.GetVendorMerchantTooltip(merchantIndex) end
+    if not IsSafeValue(tooltip) or type(tooltip) ~= "table"
+        or not IsSafeValue(tooltip.lines) or type(tooltip.lines) ~= "table" then return false end
+    for _, line in ipairs(tooltip.lines) do
+        if IsSafeValue(line) and type(line) == "table" and IsSafeText(line.leftText) then
+            local text = line.leftText:lower()
+            if text:find("already known", 1, true) or text:find("already learned", 1, true)
+                or text:find("already collected", 1, true)
+                or text:find("you have collected this appearance", 1, true)
+                or TooltipShowsMaxedCount(text, "collected%s+appearances%s*:?%s*(%d+)%s*/%s*(%d+)")
+                or TooltipShowsMaxedCount(text, "pet%s+max%s*:?%s*(%d+)%s*/%s*(%d+)") then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function addon.GetVendorRenownRanks()
+    if not (C_MajorFactions and C_MajorFactions.GetMajorFactionIDs and C_MajorFactions.GetMajorFactionData) then return end
+    local ok, factionIDs = pcall(C_MajorFactions.GetMajorFactionIDs)
+    if not ok or not IsSafeValue(factionIDs) or type(factionIDs) ~= "table" then return end
+    local ranks = {}
+    for _, factionID in ipairs(factionIDs) do
+        if IsSafeNumber(factionID) then
+            local dataOK, data = pcall(C_MajorFactions.GetMajorFactionData, factionID)
+            if dataOK and IsSafeValue(data) and type(data) == "table"
+                and IsSafeText(data.name) and IsSafeNumber(data.renownLevel) then
+                ranks[data.name:lower()] = data.renownLevel
+            end
+        end
+    end
+    return ranks
+end
+
+function addon.IsVendorRenownLocked(merchantIndex, ranks, tooltip)
+    if not (IsSafeNumber(merchantIndex) and ranks) then return false end
+    if tooltip == nil then tooltip = addon.GetVendorMerchantTooltip(merchantIndex) end
+    if not IsSafeValue(tooltip) or type(tooltip) ~= "table"
+        or not IsSafeValue(tooltip.lines) or type(tooltip.lines) ~= "table" then return false end
+    for _, line in ipairs(tooltip.lines) do
+        if IsSafeValue(line) and type(line) == "table" and IsSafeText(line.leftText) then
+            local text = line.leftText:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+            local required, faction = text:match("^%s*Requires Renown Rank%s+(%d+)%s+with the%s+(.+)%s*$")
+            if not required then
+                required, faction = text:match("^%s*Requires Renown Rank%s+(%d+)%s+with%s+(.+)%s*$")
+            end
+            if required and faction then
+                faction = faction:gsub("[%s%.]+$", ""):lower()
+                local current = ranks[faction]
+                if IsSafeNumber(current) and current < tonumber(required) then return true end
+            end
+        end
+    end
+    return false
+end
+
+local function ApplyVendorFilters(button, costs, renownRanks)
     local settings = GetSettings()
     local currencyFiltering = settings.legendFilterItems == true and selectedCostKey ~= nil
     local affordableFiltering = settings.legendAffordableOnly == true
     local savedFiltering = settings.legendSavedOnly == true
-    local filtering = currencyFiltering or affordableFiltering or savedFiltering
+    local renownFiltering = settings.legendHideRenownLocked == true
+    local knownFiltering = settings.legendHideKnown == true
+    local filtering = currencyFiltering or affordableFiltering or savedFiltering or renownFiltering or knownFiltering
     local slotParent = button.SlotParent or button:GetParent()
     if not slotParent then return end
 
@@ -4391,7 +4664,10 @@ local function ApplyVendorFilters(button, costs)
     local affordable = not affordableFiltering or CanAffordMerchantItem(button._merchantIndex, costs)
     local planner = GetVendorPlanner()
     local saved = not savedFiltering or planner[GetVendorPlannerKey(button)] ~= nil
-    if button._waffleCurrencyFilterWasVisible and matchesCurrency and affordable and saved then
+    local tooltip = (knownFiltering or renownFiltering) and (addon.GetVendorMerchantTooltip(button._merchantIndex) or false) or false
+    local renownAvailable = not renownFiltering or not addon.IsVendorRenownLocked(button._merchantIndex, renownRanks, tooltip)
+    local unknown = not knownFiltering or not addon.IsVendorItemKnown(button._merchantIndex, GetVendorItemID(button), tooltip)
+    if button._waffleCurrencyFilterWasVisible and matchesCurrency and affordable and saved and renownAvailable and unknown then
         button:Show()
         slotParent:Show()
     else
@@ -5402,7 +5678,6 @@ local function EnsureVendorListHeader(frame)
         divider:EnableMouse(true)
         divider:RegisterForClicks("LeftButtonDown", "LeftButtonUp")
         divider:SetFrameLevel(header:GetFrameLevel() + 3)
-        if divider.SetPropagateMouseClicks then divider:SetPropagateMouseClicks(false) end
         divider.line = divider:CreateTexture(nil, "OVERLAY")
         divider.line:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 0.95)
         divider.line:Hide()
@@ -5843,21 +6118,18 @@ local function WireRefreshTriggers(frame)
     if frame.ScrollChild and not frame._euvxListRenderHooked then
         -- Vendor Bags redraws its pooled grid while its corner resize is in
         -- progress, then performs one final redraw when the mouse releases.
-        -- Its ScrollChild height is written at the end of every renderer
-        -- pass, which gives us a stable, post-render signal without changing
-        -- any Vendor Bags source code.
+        -- Its ScrollChild height is written after the pooled items are laid
+        -- out, before the host clamps scrolling to that height. Restore the
+        -- list synchronously here so neither a grid frame nor its shorter
+        -- scroll range can escape the host render, including during bag
+        -- updates triggered by a purchase.
         hooksecurefunc(frame.ScrollChild, "SetHeight", function()
             if frame._waffleListApplying or GetSettings().vendorItemView ~= "list" then return end
-            -- Sorting bags can make Vendor Bags rebuild its pooled scroll
-            -- child even though no merchant data changed.  Do not mistake
-            -- that temporary host redraw for a vendor-list reflow; doing so
-            -- repeatedly forces items back to the top during the sort.
-            if frame._waffleListIgnoreHostRenderUntilBagSettles then return end
             if frame._liveWindowWidth or frame._liveWindowHeight then
                 frame._waffleListRefreshAfterResize = true
                 return
             end
-            QueueRefresh()
+            addon.Refresh()
         end)
         frame._euvxListRenderHooked = true
     end
@@ -5882,6 +6154,7 @@ end
 function addon.Refresh()
     local frame = _G.EUI_VendorBagFrame
     if not (frame and frame:IsShown() and frame.ScrollChild and frame.ScrollFrame and frame.Footer) then return end
+    if frame._waffleListApplying then return end
 
     local buttons = FindVendorButtons(frame)
     -- Install purchase protection before layout or optional item decorations
@@ -5889,16 +6162,18 @@ function addon.Refresh()
     for _, button in ipairs(buttons) do addon.GuardVendorPurchase(button) end
     WireRefreshTriggers(frame)
     -- Do not compete with the host renderer while a corner is held.  Its
-    -- release path redraws the dataset and the ScrollChild hook above queues
-    -- one clean list layout after that final native pass completes.
+    -- release path redraws the dataset and the ScrollChild hook above restores
+    -- the list immediately after that final native pass lays out its items.
     if GetSettings().vendorItemView == "list" and (frame._liveWindowWidth or frame._liveWindowHeight) then
         frame._waffleListRefreshAfterResize = true
         return
     end
+    local listView = GetSettings().vendorItemView == "list"
+    frame._waffleListApplying = listView or nil
     local entries, costsByMerchant = CollectVendorCosts()
     LayoutPanel(frame, entries)
 
-    local listView = GetSettings().vendorItemView == "list"
+    local renownRanks = GetSettings().legendHideRenownLocked == true and addon.GetVendorRenownRanks() or nil
     -- Restore the host's normal item anchors before the grid tracker resumes.
     -- This also means switching views never leaves a pooled Vendor Bags slot
     -- stretched into a row.
@@ -5925,16 +6200,14 @@ function addon.Refresh()
         if button._waffleCostText and button._waffleCostText:IsShown() and not affordable then
             button._waffleCostText:SetTextColor(1, 0.25, 0.25, 1)
         end
-        ApplyVendorFilters(button, costs)
+        ApplyVendorFilters(button, costs, renownRanks)
     end
 
     if addon.LayoutVendorTracking then
         addon.LayoutVendorTracking(frame, buttons)
     end
     if listView then
-        frame._waffleListApplying = true
         ApplyEasyAccessItemList(frame, buttons, costsByMerchant)
-        frame._waffleListApplying = nil
         frame._waffleListRefreshAfterResize = nil
     else
         ApplyEasyAccessItemList(frame, buttons, costsByMerchant)
@@ -5943,6 +6216,7 @@ function addon.Refresh()
     if frame.UpdateThumb then
         frame.UpdateThumb()
     end
+    frame._waffleListApplying = nil
 end
 
 QueueRefresh = function()
@@ -6047,6 +6321,7 @@ events:RegisterEvent("UPDATE_SUMMONPETS_ACTION")
 events:RegisterEvent("HEIRLOOMS_UPDATED")
 events:RegisterEvent("HOUSE_DECOR_ADDED_TO_CHEST")
 events:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
+events:RegisterEvent("MAJOR_FACTION_RENOWN_LEVEL_CHANGED")
 events:RegisterEvent("MERCHANT_CLOSED")
 events:RegisterEvent("GOSSIP_SHOW")
 events:RegisterEvent("PLAYER_SOFT_INTERACT_CHANGED")
@@ -6054,8 +6329,6 @@ events:RegisterEvent("PLAYER_REGEN_DISABLED")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:SetScript("OnEvent", function(_, event, addonName, success)
     if event == "BAG_UPDATE" then
-        local vendorFrame = _G.EUI_VendorBagFrame
-        if vendorFrame then vendorFrame._waffleListIgnoreHostRenderUntilBagSettles = true end
         itemQueueCache.BagChanged(addonName)
         return
     end
@@ -6123,12 +6396,6 @@ events:SetScript("OnEvent", function(_, event, addonName, success)
         end
         if event == "BAG_UPDATE_DELAYED" then
             ScheduleItemQueueRefresh("bags")
-            local vendorFrame = _G.EUI_VendorBagFrame
-            if vendorFrame then
-                C_Timer.After(0, function()
-                    vendorFrame._waffleListIgnoreHostRenderUntilBagSettles = nil
-                end)
-            end
         elseif event == "CURRENCY_DISPLAY_UPDATE" then
             local items = {}
             for _, sample in ipairs(itemQueueCache.samples or {}) do
@@ -6145,7 +6412,7 @@ events:SetScript("OnEvent", function(_, event, addonName, success)
         -- The remaining events mostly serve Item Queue, companion, or skin
         -- features.  Never redraw Vendor Bags for those (notably bag sorting).
         if event == "MERCHANT_SHOW" or event == "MERCHANT_UPDATE" or event == "PLAYER_MONEY"
-            or event == "CURRENCY_DISPLAY_UPDATE" then
+            or event == "CURRENCY_DISPLAY_UPDATE" or event == "MAJOR_FACTION_RENOWN_LEVEL_CHANGED" then
             QueueRefresh()
         end
     end

@@ -88,15 +88,22 @@ settings.ignoreInteractVendorsInCombat = true
 local owner
 UIParent = {}
 function CreateFrame(_, name)
-    local frame = {name = name, attributes = {}, bindings = {}}
+    local frame = {name = name, attributes = {}, bindings = {}, bindingChanges = 0}
     function frame:SetSize() end
     function frame:SetPoint() end
     function frame:SetAlpha() end
     function frame:RegisterForClicks() end
     function frame:SetAttribute(key, value) self.attributes[key] = value end
     function frame:GetAttribute(key) return self.attributes[key] end
-    function frame:ClearBindings() self.bindings = {} end
-    function frame:SetBindingClick(_, key, buttonName) self.bindings[key] = buttonName end
+    function frame:ClearBindings()
+        self.bindings = {}
+        self.bindingChanges = self.bindingChanges + 1
+    end
+    function frame:SetBindingClick(priority, key, buttonName)
+        equal(priority, true, "ignored-vendor bindings must win over non-priority overrides")
+        self.bindings[key] = buttonName
+        self.bindingChanges = self.bindingChanges + 1
+    end
     if name == "WaffleHouseIgnoredInteractBindingOwner" then owner = frame end
     return frame
 end
@@ -106,7 +113,9 @@ function RegisterStateDriver(frame, stateID, driver)
     equal(driver, "[combat] combat; peace", "binding driver must cover both phases")
 end
 function ClearOverrideBindings(frame) frame:ClearBindings() end
-function SetOverrideBindingClick(frame, _, key, buttonName) frame:SetBindingClick(false, key, buttonName) end
+function SetOverrideBindingClick(frame, priority, key, buttonName)
+    frame:SetBindingClick(priority, key, buttonName)
+end
 function GetBindingKey(action)
     equal(action, "INTERACTTARGET", "only the Interact With Target action may be blocked")
     return "F", "G"
@@ -143,10 +152,20 @@ for _, options in ipairs({
     settings.ignoreInteractVendorsInCombat = options.inCombat
     updateBinding()
     equal(hasBinding(), options.out, "out-of-combat bindings must follow their own checkbox")
+    local changesBeforeCombat = owner.bindingChanges
     phase("combat")
     equal(hasBinding(), options.inCombat, "combat bindings must follow their own checkbox")
+    if options.out and options.inCombat then
+        equal(owner.bindingChanges, changesBeforeCombat,
+            "an override needed in both phases must survive combat without being replaced")
+    end
+    local changesBeforePeace = owner.bindingChanges
     phase("peace")
     equal(hasBinding(), options.out, "combat exit must restore only out-of-combat bindings")
+    if options.out and options.inCombat then
+        equal(owner.bindingChanges, changesBeforePeace,
+            "an override needed in both phases must survive combat exit without being replaced")
+    end
 end
 
 guids.softinteract = "Pet-0-4234-0-6610-12345-0202F859E9"

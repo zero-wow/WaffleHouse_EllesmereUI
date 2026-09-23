@@ -5,7 +5,7 @@
 local SOURCE = arg[1] or "WaffleHouse_EllesmereUI.lua"
 local file, err = io.open(SOURCE, "rb")
 assert(file, "could not open " .. SOURCE .. ": " .. tostring(err))
-local source = file:read("*a")
+local source = file:read("*a"):gsub("\r\n", "\n")
 file:close()
 
 local startAt = assert(source:find("local function CompactVendorListCurrencyName%("), "missing cost-name compactor")

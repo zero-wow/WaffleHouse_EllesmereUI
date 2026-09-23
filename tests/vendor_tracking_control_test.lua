@@ -66,7 +66,9 @@ function Object:SetPoint(...) self.point = { ... } end
 function Object:SetFrameLevel(level) self.frameLevel = level end
 function Object:GetFrameLevel() return self.frameLevel or 0 end
 function Object:RegisterForClicks(...) self.clicks = { ... } end
-function Object:SetPropagateMouseClicks(value) self.propagateMouseClicks = value end
+function Object:SetPropagateMouseClicks()
+    error("protected SetPropagateMouseClicks must not run while a vendor opens", 2)
+end
 function Object:CreateTexture()
     return setmetatable({ parent = self }, Object)
 end
@@ -222,14 +224,14 @@ test("notes alone stay off and right-click edits notes without toggling tracking
     assertEqual(refreshes, 1, "saving a note should refresh once")
 end)
 
-test("pin registers both click buttons and blocks merchant click forwarding", function()
+test("pin registers both click buttons without a protected propagation call", function()
     resetState()
     local button = newVendorButton(1003)
     production.EnsureVendorPlannerControl(button, {})
     local control = button._wafflePlannerControl
     assertEqual(control.clicks[1], "LeftButtonUp", "pin should explicitly register left clicks")
     assertEqual(control.clicks[2], "RightButtonUp", "pin should explicitly register right clicks")
-    assertEqual(control.propagateMouseClicks, false, "pin must not forward clicks to the purchase button")
+    assertTrue(control.parent == button, "pin must remain a child button with default click propagation")
 end)
 
 test("buyback and missing item links hide the pooled pin control", function()
