@@ -1433,6 +1433,15 @@ events:SetScript("OnEvent", function(_, event, name)
         end
     end
     QueueRefresh()
+    -- EllesmereUI Bags creates its Header in a 0.5s PLAYER_LOGIN timer.
+    -- The immediate login refresh sees no header, so attach after that timer
+    -- and retry once if another addon delays the host's initialization.
+    if event == "PLAYER_LOGIN" then
+        C_Timer.After(0.8, QueueRefresh)
+        C_Timer.After(2, function()
+            if not assistantButton and IsEnabled() then QueueRefresh() end
+        end)
+    end
     -- The bank addon's tab discovery is intentionally deferred one frame after
     -- opening; refresh after it has populated EUI_Bank._allTabs as well.
     if event == "BANKFRAME_OPENED" then C_Timer.After(0.15, QueueRefresh) end

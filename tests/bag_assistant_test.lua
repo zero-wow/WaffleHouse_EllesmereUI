@@ -212,9 +212,19 @@ C_Container.PickupContainerItem = function(bag, slot)
         cursor, containers[bag][slot] = held, nil
     end
 end
+local delayedLoginCallbacks = {}
+local immediateTimer = C_Timer.After
+C_Timer.After = function(delay, callback)
+    if delay > 0 then delayedLoginCallbacks[#delayedLoginCallbacks + 1] = callback
+    else callback() end
+end
+bankEventFrame.scripts.OnEvent(nil, "PLAYER_LOGIN")
+assert(#delayedLoginCallbacks >= 1,
+    "assistant must retry after EllesmereUI Bags builds its header post-login")
 EUI_Bags = { Header = CreateFrame("Frame"), _bagsBtn = CreateFrame("Button"),
     _sortBtn = { Click = function() end } }
-addon.RefreshBagAssistant()
+for _, callback in ipairs(delayedLoginCallbacks) do callback() end
+C_Timer.After = immediateTimer
 local assistantButton = EUI_Bags.Header.children[1]
 assert(assistantButton and assistantButton.scripts.OnClick, "assistant header button must be created")
 assert(assistantButton.icon.texture:find("bag_assistant_emblem.tga", 1, true)
