@@ -28,6 +28,7 @@ local visualHooksInstalled
 local frozenSlotManagerOpen
 local frozenSlotManagerDraft
 local sortRunActive
+addon.IsFrozenBagSortActive = function() return sortRunActive == true end
 local SORT_MOVE_DELAY = 0.04
 local MAX_SORT_MOVE_RETRIES = 8
 local MAX_SORT_REPLANS = 2
@@ -139,6 +140,9 @@ local function IsSavedFrozen(bag, slot, info)
     if type(record) ~= "table" then return false end
     return info and info.itemID and record.itemID == info.itemID
         and (not record.itemGUID or record.itemGUID == info.itemGUID) or false
+end
+addon.IsFrozenBagSlot = function(bag, slot, info)
+    return GetSettings().bagSlotFreezeEnabled ~= false and IsSavedFrozen(bag, slot, info)
 end
 
 local function GetMainBagsLabel()
@@ -808,10 +812,10 @@ function addon.BuildBagsPage(parent, yOffset)
         },
         {
             type = "toggle",
-            text = "Advance on Left-Click",
-            tooltip = "Each left-click attempts the next available bank action. Right-click always opens the full planner. Inventory moves run only from a click, not from events or timers.",
-            getValue = function() return GetSettings().bagAssistantAdvanceOnClick ~= false end,
-            setValue = function(value) GetSettings().bagAssistantAdvanceOnClick = value and true or false end,
+            text = "Include Guild Bank",
+            tooltip = "Opt in to Guild Bank organization when it is open and your guild permissions permit it. Guild moves still require a click.",
+            getValue = function() return GetSettings().bagAssistantIncludeGuildBank == true end,
+            setValue = function(value) GetSettings().bagAssistantIncludeGuildBank = value and true or false end,
         }
     ); y = y - h
     return math.abs(y)

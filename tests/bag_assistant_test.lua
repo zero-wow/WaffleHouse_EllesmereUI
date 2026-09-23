@@ -128,6 +128,7 @@ function frameMethods:SetJustifyH() end
 function frameMethods:SetJustifyV() end
 function frameMethods:SetWordWrap() end
 function frameMethods:SetTexture(texture) self.texture = texture end
+function frameMethods:SetTexCoord(...) self.texCoord = { ... } end
 function frameMethods:SetAlpha() end
 function frameMethods:SetVertexColor() end
 function frameMethods:SetColorTexture() end
@@ -216,11 +217,33 @@ EUI_Bags = { Header = CreateFrame("Frame"), _bagsBtn = CreateFrame("Button"),
 addon.RefreshBagAssistant()
 local assistantButton = EUI_Bags.Header.children[1]
 assert(assistantButton and assistantButton.scripts.OnClick, "assistant header button must be created")
+assert(assistantButton.icon.texture:find("bag_assistant_emblem.tga", 1, true)
+    and assistantButton.actionTile.width == 14 and assistantButton.actionTile.height == 14
+    and assistantButton.stateBorder.width == 9,
+    "action and status badges must fit the skinned 24px assistant icon")
 assistantButton:Click("LeftButton")
 local menu = WaffleHouseBagAssistantMenu
+assert(not menu and #updates == 2,
+    "left-click must do the next action without opening the full planner")
+assert(assistantButton.pauseLeft:IsShown() and not assistantButton.playGlyph:IsShown(),
+    "active sequence must display pause bars without replacing the bronze icon")
+assistantButton:Click("RightButton")
+assert(not WaffleHouseBagAssistantMenu and #updates == 2,
+    "right-click during an active run must pause without opening the planner")
+assert(not assistantButton.pauseLeft:IsShown() and assistantButton.playGlyph:IsShown(),
+    "paused sequence must display a play/resume mark")
+local shiftDown = true
+IsShiftKeyDown = function() return shiftDown end
+assistantButton:Click("RightButton")
+menu = WaffleHouseBagAssistantMenu
 assert(menu and menu:IsShown() and menu.width == 390 and menu.height == 480,
-    "expanded bank planner must open in a bounded menu")
-assert(#updates == 2 and menu.hint.text:find("Submitted 1 tab settings update", 1, true),
+    "shift-right-click must open the bounded planner while paused")
+shiftDown = false
+assistantButton:Click("LeftButton")
+assert(#updates == 2, "left-click while paused must not queue another action")
+assistantButton:Click("RightButton")
+assert(#updates == 2, "resuming must not immediately queue another action")
+assert(#updates == 2,
     "first assistant click must auto-apply qualifying bank-tab settings")
 assert(menu.viewButtons[-3]._enabled and menu.organize._enabled and menu.withdrawGear._enabled,
     "bank views, eligible generic-tab cleanup, and exact gear review must be actionable")
@@ -330,5 +353,60 @@ assert(bankSorts[1] == Enum.BankType.Character and addon.GetBagAssistantNextTask
 assistantButton:Click("LeftButton")
 assert(bankSorts[2] == Enum.BankType.Account and addon.GetBagAssistantNextTask() == "menu",
     "assistant must finish the click sequence after sorting the Warband bank")
+
+-- A carried item can be categorized on demand, but both the initial scan and
+-- the final pickup must honor a newly frozen slot.
+containers[100] = {}
+containers[102][6] = false
+containers[104][5] = { itemID = 9001 }
+C_Bank.IsItemAllowedInBankType = function(_, location) return location.bag == 0 end
+addon.IsFrozenBagSlot = function(bag, slot) return bag == 0 and slot == 1 end
+assert(not addon.GetBagAssistantPlan().move,
+    "a frozen carried item must not enter the category transfer plan")
+local freezeChecks = 0
+addon.IsFrozenBagSlot = function(bag, slot)
+    if bag == 0 and slot == 1 then
+        freezeChecks = freezeChecks + 1
+        return freezeChecks > 1
+    end
+    return false
+end
+assert(not addon.MoveBagAssistantCategoryItem() and containers[0][1]
+    and containers[0][1].itemID == 9001,
+    "a newly frozen carried item must not be picked up after planning")
+addon.IsFrozenBagSlot = nil
+
+-- Guild Bank support is opt-in and moves one visible, permitted item per
+-- click, from the selected tab to a populated named category tab.
+EUI_BankFrame.IsVisible = function() return false end
+addon.GetSettings = function() return { bagAssistantIncludeGuildBank = true } end
+GuildBankFrame = { IsVisible = function() return true end }
+local guildItems = {
+    [1] = { { link = "item:9001", texture = 457 } },
+    [2] = { { link = "item:9001", texture = 457 } },
+}
+GetNumGuildBankTabs = function() return 2 end
+GetCurrentGuildBankTab = function() return 1 end
+GetGuildBankTabInfo = function(tab)
+    return tab == 1 and "Misc" or "Materials 2", 457, true, true, -1, -1
+end
+GetGuildBankItemInfo = function(tab, slot)
+    local item = guildItems[tab] and guildItems[tab][slot]
+    return item and item.texture or nil, 1, false
+end
+GetGuildBankItemLink = function(tab, slot)
+    local item = guildItems[tab] and guildItems[tab][slot]
+    return item and item.link or nil
+end
+PickupGuildBankItem = function(tab, slot)
+    local held = guildItems[tab][slot]
+    if cursor then guildItems[tab][slot], cursor = cursor, held
+    elseif held then cursor, guildItems[tab][slot] = held, nil end
+end
+assert(addon.GetBagAssistantNextTask() == "guild_move",
+    "an opted-in Guild Bank should offer a permitted category move")
+assistantButton:Click("LeftButton")
+assert(not guildItems[1][1] and guildItems[2][2] and not cursor,
+    "one guild action click must move one item between guild tabs")
 
 print("bag assistant static tests passed")
