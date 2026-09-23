@@ -131,6 +131,7 @@ local function IsSafeText(value) return type(value) == "string" and value ~= "" 
 local function IsSafeNumber(value) return type(value) == "number" end
 local function GetVendorPlanner() return _G.__planner(), _G.__notes() end
 ]],
+    extractFunction(productionSource, "GetVendorMerchantInfo"),
     extractFunction(productionSource, "GetVendorItemID"),
     extractFunction(productionSource, "GetVendorPlannerKey"),
     extractFunction(productionSource, "SaveVendorPlannerItem"),

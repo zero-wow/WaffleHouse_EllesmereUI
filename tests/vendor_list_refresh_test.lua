@@ -465,6 +465,33 @@ test("cost header orders entire rows by price and reverses on second click", fun
     check(state.buttons[1]:GetTop() > state.buttons[2]:GetTop(), "higher price row must move first descending")
 end)
 
+test("modern merchant prices are used and missing prices never read as free", function()
+    local entries = {
+        { id = 101, name = "Gold item", price = 12345 },
+        { id = 102, name = "Free item", price = 0 },
+        { id = 103, name = "Pending item" },
+        { id = 104, name = "Alternate item", price = 0, extended = true },
+    }
+    local state = fixture({ noCosts = true, entries = entries })
+    state.env.GetMerchantItemInfo = function() return nil end
+    state.env.C_MerchantFrame = { GetItemInfo = function(index)
+        local entry = entries[index]
+        if index == 3 then return nil end
+        return { name = entry.name, texture = 12345, price = entry.price,
+            hasExtendedCost = entry.extended == true }
+    end }
+    state.addon.Refresh()
+    check(state.buttons[1]._waffleListCost.text:find("Gold", 1, true),
+        "the list must use a readable modern gold price even without the legacy API")
+    equal(state.buttons[2]._waffleListCost.text, "Free", "confirmed zero-price items may read Free")
+    equal(state.buttons[3]._waffleListCost.text, "Price unavailable",
+        "a missing merchant price must not be called Free")
+    equal(state.buttons[4]._waffleListCost.text, "Alt cost unavailable",
+        "an extended cost that has not loaded must not be called Free")
+    equal(state.addon.GetVendorListCostSortValue(state.buttons[3], {}), "3",
+        "unknown prices must sort separately from confirmed free items")
+end)
+
 test("seven-item ascending cost sort keeps every vendor item in its own row", function()
     local entries = {}
     for index, price in ipairs({ 10, 70, 30, 50, 20, 60, 40 }) do

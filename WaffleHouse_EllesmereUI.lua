@@ -167,6 +167,14 @@ local function GetSettings()
     if WaffleHouseDB.bagAssistantEnabled == nil then
         WaffleHouseDB.bagAssistantEnabled = true
     end
+    if WaffleHouseDB.bagRecentHighlightEnabled == nil then
+        WaffleHouseDB.bagRecentHighlightEnabled = true
+    end
+    if WaffleHouseDB.bagRecentHighlightClearMode ~= "hover"
+        and WaffleHouseDB.bagRecentHighlightClearMode ~= "timer"
+        and WaffleHouseDB.bagRecentHighlightClearMode ~= "close" then
+        WaffleHouseDB.bagRecentHighlightClearMode = "hover"
+    end
     if WaffleHouseDB.bagSlotFreezeModifier ~= "shift" and WaffleHouseDB.bagSlotFreezeModifier ~= "alt"
         and WaffleHouseDB.bagSlotFreezeModifier ~= "disabled" then
         WaffleHouseDB.bagSlotFreezeModifier = "ctrl"
@@ -796,7 +804,7 @@ local function BuildOptionsConfig()
     return {
         title = "Waffle House",
         description = "|cff7f7f7fEnhancing your |r|cff18d19eEllesmereUI|r|cff7f7f7f with |r|cff6fe4cbQuality of Life|r|cff7f7f7f Goodness...|r",
-        searchTerms = "vendor bag merchant currency cost legend shopping list easy access item view list rows frozen slot freeze modifier lock sort main bags frosted marker interact key ignored vendor npc ethereal soul trader tool rack chooser choice celestial carver energy splinter arcanic precision empyrean zapper primary stat haste mastery critical strike companion pet summon wonderbar databar data bar drag reorder entries item queue zygor automation auto skip quest gossip dialogue campaign cinematic repair sell junk modifier reverse mode buff check raid party missing assignment beacon earth shield fortitude intellect skyfury bronze buff frame anchor collapse expand own cast timer rules adventure ritual ritual sites delve delves dungeon dungeons raid raids trusty delve companion valeera sanguinar curio curios combat utility bilespear dreamcatcher mute voice dialogue sound",
+        searchTerms = "vendor bag merchant currency cost legend shopping list easy access item view list rows frozen slot freeze modifier lock sort main bags frosted marker recent items new item highlight acquired items interact key ignored vendor npc ethereal soul trader tool rack chooser choice celestial carver energy splinter arcanic precision empyrean zapper primary stat haste mastery critical strike companion pet summon wonderbar databar data bar drag reorder entries item queue zygor automation auto skip quest gossip dialogue campaign cinematic repair sell junk modifier reverse mode buff check raid party missing assignment beacon earth shield fortitude intellect skyfury bronze buff frame anchor collapse expand own cast timer rules adventure ritual ritual sites delve delves dungeon dungeons raid raids trusty delve companion valeera sanguinar curio curios combat utility bilespear dreamcatcher mute voice dialogue sound",
         pages = { "General", "Adventure", "Automation", "Bags", "Item Queue", "Vendor" },
         buildPage = function(pageName, parent, yOffset)
             if pageName == "Adventure" then
@@ -3211,6 +3219,43 @@ local function GetMerchantCosts(merchantIndex)
     return costs
 end
 
+local function GetVendorMerchantInfo(merchantIndex)
+    if not IsSafeNumber(merchantIndex) then return nil end
+    local item = {}
+    -- Vendor Bags renders from this API. The legacy global can be absent or
+    -- return no price for an otherwise populated modern merchant item.
+    if C_MerchantFrame and C_MerchantFrame.GetItemInfo then
+        local ok, info = pcall(C_MerchantFrame.GetItemInfo, merchantIndex)
+        if ok and IsSafeValue(info) and type(info) == "table" then
+            if IsSafeText(info.name) then item.name = info.name end
+            if IsSafeValue(info.texture) then item.texture = info.texture end
+            if IsSafeNumber(info.price) then item.price = info.price end
+            if IsSafeValue(info.hasExtendedCost) and type(info.hasExtendedCost) == "boolean" then
+                item.hasExtendedCost = info.hasExtendedCost
+            end
+        end
+    end
+    if GetMerchantItemInfo and (not item.name or item.texture == nil
+        or item.price == nil or item.hasExtendedCost == nil) then
+        local ok, name, texture, price, _, _, _, _, hasExtendedCost = pcall(GetMerchantItemInfo, merchantIndex)
+        if ok then
+            if not item.name and IsSafeText(name) then item.name = name end
+            if item.texture == nil and IsSafeValue(texture) then item.texture = texture end
+            if item.price == nil and IsSafeNumber(price) then item.price = price end
+            if item.hasExtendedCost == nil and IsSafeValue(hasExtendedCost)
+                and type(hasExtendedCost) == "boolean" then
+                item.hasExtendedCost = hasExtendedCost
+            end
+        end
+    end
+    return next(item) and item or nil
+end
+
+local function IsConfirmedFreeVendorItem(item)
+    return item and item.price == 0 and item.hasExtendedCost == false
+        and IsSafeText(item.name) and item.texture ~= nil
+end
+
 local function GetOwnedCostAmount(cost)
     if not (cost and IsSafeText(cost.link)) then return nil end
 
@@ -4112,10 +4157,11 @@ local function ButtonUsesCost(costs, key)
 end
 
 local function CanAffordMerchantItem(merchantIndex, costs)
-    local price = 0
-    if GetMerchantItemInfo then
-        local _, _, itemPrice = GetMerchantItemInfo(merchantIndex)
-        price = IsSafeNumber(itemPrice) and itemPrice or 0
+    local item = GetVendorMerchantInfo(merchantIndex)
+    local price = item and item.price
+    if not IsSafeNumber(price) or (item.hasExtendedCost ~= false and #(costs or {}) == 0)
+        or (price == 0 and #(costs or {}) == 0 and not IsConfirmedFreeVendorItem(item)) then
+        return false
     end
     if price > 0 and GetMoney and GetMoney() < price then return false end
     for _, cost in ipairs(costs or {}) do
@@ -4158,10 +4204,8 @@ local function SaveVendorPlannerItem(button, costs)
         return
     end
 
-    local name, texture, price
-    if GetMerchantItemInfo then
-        name, texture, price = GetMerchantItemInfo(button._merchantIndex)
-    end
+    local item = GetVendorMerchantInfo(button._merchantIndex)
+    local name, texture, price = item and item.name, item and item.texture, item and item.price
     local copiedCosts = {}
     for _, cost in ipairs(costs or {}) do
         copiedCosts[#copiedCosts + 1] = {
@@ -4427,14 +4471,14 @@ local function UpdatePriceLabel(button, costs)
     if not button.PriceText then return end
 
     local waffleText = button._waffleCostText
-    if not (#costs > 0 and GetMerchantItemInfo) then
+    if #costs == 0 then
         if waffleText then waffleText:Hide() end
         button.PriceText:Show()
         return
     end
 
-    local _, _, price, _, _, _, _, hasExtendedCost = GetMerchantItemInfo(button._merchantIndex)
-    if hasExtendedCost and IsSafeNumber(price) and price <= 0 then
+    local item = GetVendorMerchantInfo(button._merchantIndex)
+    if item and item.hasExtendedCost == true and (item.price == nil or item.price <= 0) then
         local firstCost = costs[1]
         waffleText = GetWaffleCostText(button)
         CopyPriceTextLayout(button.PriceText, waffleText)
@@ -4620,17 +4664,14 @@ function addon.NormalizeVendorListSortText(value)
 end
 
 function addon.GetVendorListCostSortValue(button, costs)
-    local price = 0
-    if GetMerchantItemInfo and IsSafeNumber(button and button._merchantIndex) then
-        local _, _, merchantPrice = GetMerchantItemInfo(button._merchantIndex)
-        price = IsSafeNumber(merchantPrice) and math.max(0, merchantPrice) or 0
-    end
+    local item = GetVendorMerchantInfo(button and button._merchantIndex)
+    local price = item and item.price
 
-    if price > 0 then
+    if IsSafeNumber(price) and price > 0 then
         return "1", string.format("%012d", price)
     end
     if #(costs or {}) == 0 then
-        return "0", ""
+        return IsConfirmedFreeVendorItem(item) and "0" or "3", ""
     end
 
     -- Different currencies have no conversion rate, but the first displayed
@@ -4807,17 +4848,20 @@ end
 
 local function GetVendorListCostText(button, costs, useMoxieInitials)
     local parts = {}
-    if GetMerchantItemInfo and IsSafeNumber(button._merchantIndex) then
-        local _, _, price = GetMerchantItemInfo(button._merchantIndex)
-        local goldText = FormatVendorGoldCost(price)
-        if goldText then parts[#parts + 1] = goldText end
-    end
+    local item = GetVendorMerchantInfo(button._merchantIndex)
+    local goldText = FormatVendorGoldCost(item and item.price)
+    if goldText then parts[#parts + 1] = goldText end
     for _, cost in ipairs(costs or {}) do
         local name = IsSafeText(cost.name) and cost.name or "Currency"
         name = CompactVendorListCurrencyName(name, useMoxieInitials == true)
         parts[#parts + 1] = tostring(cost.amount or 0) .. " " .. name
     end
-    return #parts > 0 and table.concat(parts, " + ") or "Free"
+    if item and item.hasExtendedCost == true and #(costs or {}) == 0 then
+        parts[#parts + 1] = "Alt cost unavailable"
+    end
+    if #parts > 0 then return table.concat(parts, " + ") end
+    if IsConfirmedFreeVendorItem(item) then return "Free" end
+    return "Price unavailable"
 end
 
 function addon.ColorVendorListCurrencyCosts(text, costs, useMoxieInitials)

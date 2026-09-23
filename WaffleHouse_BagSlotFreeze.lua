@@ -799,6 +799,7 @@ function addon.BuildBagsPage(parent, yOffset)
             }
         ); y = y - h
     end
+    if addon.BuildRecentItemsBagsPage then y = addon.BuildRecentItemsBagsPage(parent, y) end
     return math.abs(y)
 end
 

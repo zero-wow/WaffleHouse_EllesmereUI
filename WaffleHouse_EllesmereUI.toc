@@ -15,6 +15,7 @@ WaffleHouse_Adventure.lua
 WaffleHouse_SoireeRules.lua
 WaffleHouse_Soiree.lua
 WaffleHouse_BagSlotFreeze.lua
+WaffleHouse_RecentItems.lua
 WaffleHouse_BagAssistant.lua
 WaffleHouse_BuffFrameRules.lua
 WaffleHouse_BuffFrame.lua

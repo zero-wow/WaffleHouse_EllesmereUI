@@ -14,7 +14,9 @@ local toc = read(join("WaffleHouse_EllesmereUI.toc"))
 local source = read(join("WaffleHouse_BagAssistant.lua"))
 local main = read(join("WaffleHouse_EllesmereUI.lua"))
 
-assert(toc:find("WaffleHouse_BagSlotFreeze.lua\nWaffleHouse_BagAssistant.lua", 1, true),
+local freezeAt = toc:find("WaffleHouse_BagSlotFreeze.lua", 1, true)
+local assistantAt = toc:find("WaffleHouse_BagAssistant.lua", 1, true)
+assert(freezeAt and assistantAt and freezeAt < assistantAt,
     "bag assistant must load after the bags integration")
 assert(main:find("WaffleHouseDB.bagAssistantEnabled == nil", 1, true),
     "bag assistant needs a stable enabled-by-default setting")
