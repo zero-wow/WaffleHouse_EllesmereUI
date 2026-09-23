@@ -103,14 +103,13 @@ local function AssertLayout(panelWidth, mode)
 
     for _, name in ipairs(order) do
         local control = legend[name]
-        local expectedWidth = math.max(41, control.label.measuredWidth + 22) + (name == "mode" and 20 or 0)
+        local expectedWidth = math.max(41, control.label.measuredWidth + 22)
         assertEqual(control.width, expectedWidth, name .. " must use its measured label width plus icon/checkmark padding")
         assertEqual(control.height, 22, name .. " must leave vertical gutters between toolbar rows")
         assertEqual(control.label.justifyH, "LEFT", name .. " label must stay left-aligned")
         assertEqual(#control.label.points, 2, name .. " label must be bounded on both sides")
         assertEqual(control.label.points[2][1], "RIGHT", name .. " label needs a right clipping guard")
-        assertEqual(control.label.points[2][4], name == "mode" and -23 or -3,
-            name .. " label needs a gutter before the native-view dot")
+        assertEqual(control.label.points[2][4], -3, name .. " label needs a 3px trailing gutter")
 
         if actionControls[name] then
             assertEqual(control.label.points[1][2], control._waffleActionIconAnchor, name .. " label must follow its action icon")
