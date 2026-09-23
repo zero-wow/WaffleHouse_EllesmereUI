@@ -264,25 +264,132 @@ test("one quest-marked active choice advances alongside ordinary dialogue", func
         { gossipOptionID = 189, status = 0, type = "vendor", rewards = {} },
     }
     fire("GOSSIP_SHOW")
-    assertEqual(#selectedOptions, 0, "a service option must keep a mixed gossip menu manual")
+    assertEqual(#selectedOptions, 1, "the quest continuation must win over a vendor service")
+    assertEqual(selectedOptions[1].optionID, 188, "the vendor option must not open before the quest continuation")
 end)
 
-test("vendor and other service entries stay open instead of being skipped as dialogue", function()
+test("quest continuation stays first for active merchants and quest offers", function()
+    reset()
+    settings.automation = { skipDialogue = true }
+    activeQuests = { { questID = 93403, isComplete = false } }
+    options = {
+        { gossipOptionID = 192, status = 0, type = "vendor", rewards = {} },
+        { gossipOptionID = 193, status = 0, flags = 1, rewards = {} },
+    }
+    fire("MERCHANT_SHOW")
+    fire("GOSSIP_SHOW")
+    assertEqual(#selectedOptions, 1, "an open merchant must not suppress a quest continuation")
+    assertEqual(selectedOptions[1].optionID, 193, "the quest continuation must be selected before merchant handling")
+
+    reset()
+    settings.automation = { skipDialogue = true, autoAcceptQuests = true }
+    availableQuests = { { questID = 93404 } }
+    options = {
+        { gossipOptionID = 194, status = 0, flags = 1, rewards = {} },
+        { gossipOptionID = 195, status = 0, type = "vendor", rewards = {} },
+    }
+    fire("GOSSIP_SHOW")
+    assertEqual(#selectedOptions, 1, "a quest continuation must run before an offered quest is opened")
+    assertEqual(selectedOptions[1].optionID, 194, "the continuation must win over both quest-offer and vendor routes")
+
+    reset()
+    settings.automation = { skipDialogue = true }
+    activeQuests = { { questID = 93405, isComplete = false } }
+    options = {
+        { gossipOptionID = 196, status = 0, type = "vendor", rewards = {} },
+        { gossipOptionID = 197, status = 0, flags = 1, rewards = {} },
+    }
+    IsShiftKeyDown = function() return true end
+    fire("GOSSIP_SHOW")
+    assertEqual(#selectedOptions, 0, "holding the default Shift pause key must leave the quest continuation alone")
+    IsShiftKeyDown = function() return false end
+end)
+
+test("a sole vendor service opens while other services remain manual", function()
     reset()
     settings.automation = { skipDialogue = true }
     options = { { gossipOptionID = 170, status = 0, rewards = {}, type = "vendor" } }
     fire("GOSSIP_SHOW")
-    assertEqual(#selectedOptions, 0, "a one-option vendor menu must remain clickable")
-
-    options = { { gossipOptionID = 171, status = 0, rewards = {}, isPurchaseOption = true } }
+    assertEqual(#selectedOptions, 1, "a one-option vendor menu should open its merchant")
+    assertEqual(selectedOptions[1].optionID, 170, "wrong vendor option selected")
     fire("GOSSIP_OPTIONS_REFRESHED")
-    assertEqual(#selectedOptions, 0, "explicit purchase option flag must also keep the menu open")
+    assertEqual(#selectedOptions, 1, "the same vendor menu must not be selected again")
 
+    reset()
+    settings.automation = { skipDialogue = true }
+    options = { { gossipOptionID = 171, status = 0, rewards = {}, isPurchaseOption = true } }
+    fire("GOSSIP_SHOW")
+    assertEqual(#selectedOptions, 1, "an explicitly marked sole vendor purchase option should open")
+
+    reset()
+    settings.automation = { skipDialogue = true }
     Enum = { GossipOptionType = { Gossip = 0, Vendor = 1, Trainer = 2 } }
     options = { { gossipOptionID = 172, status = 0, rewards = {}, type = Enum.GossipOptionType.Trainer } }
+    fire("GOSSIP_SHOW")
+    assertEqual(#selectedOptions, 0, "a trainer must remain manual")
+    options = { { gossipOptionID = 173, status = 0, rewards = {}, type = Enum.GossipOptionType.Vendor } }
     fire("GOSSIP_OPTIONS_REFRESHED")
-    assertEqual(#selectedOptions, 0, "non-dialogue service enums must keep the menu open")
+    assertEqual(#selectedOptions, 1, "the Retail vendor enum should open a sole merchant option")
     Enum = nil
+end)
+
+test("vendor auto-open preserves quest, choice, pause, and active-merchant safeguards", function()
+    reset()
+    settings.automation = { skipDialogue = true }
+    options = {
+        { gossipOptionID = 175, status = 0, rewards = {}, type = "vendor" },
+        { gossipOptionID = 176, status = 0, rewards = {}, type = "gossip" },
+    }
+    fire("GOSSIP_SHOW")
+    assertEqual(#selectedOptions, 0, "a vendor among multiple gossip choices must stay manual")
+
+    reset()
+    settings.automation = { skipDialogue = true }
+    activeQuests = { { questID = 809 } }
+    options = { { gossipOptionID = 177, status = 0, rewards = {}, type = "vendor" } }
+    fire("GOSSIP_SHOW")
+    assertEqual(#selectedOptions, 0, "an active quest must not lose focus to vendor auto-open")
+
+    reset()
+    settings.automation = { skipDialogue = true }
+    availableQuests = { { questID = 810 } }
+    options = { { gossipOptionID = 178, status = 0, rewards = {}, type = "vendor" } }
+    fire("GOSSIP_SHOW")
+    assertEqual(#selectedOptions, 0, "an offered quest must not lose focus to vendor auto-open")
+
+    reset()
+    settings.automation = { skipDialogue = true, pauseKey = "alt" }
+    altDown = true
+    options = { { gossipOptionID = 179, status = 0, rewards = {}, type = "vendor" } }
+    fire("GOSSIP_SHOW")
+    assertEqual(#selectedOptions, 0, "the pause key must also pause vendor auto-open")
+
+    reset()
+    settings.automation = { skipDialogue = true }
+    options = { { gossipOptionID = 180, status = 0, rewards = {}, type = "vendor" } }
+    fire("MERCHANT_SHOW")
+    fire("GOSSIP_SHOW")
+    assertEqual(#selectedOptions, 0, "an already-open merchant must not be reopened by gossip")
+end)
+
+test("a forced sole vendor opens but forced story dialogue stays visible", function()
+    reset()
+    settings.automation = { skipDialogue = true }
+    local originalForceGossip = C_GossipInfo.ForceGossip
+    C_GossipInfo.ForceGossip = function() return true end
+    options = { { gossipOptionID = 181, status = 0, rewards = {}, type = "vendor" } }
+    fire("GOSSIP_SHOW")
+    local vendorSelections = #selectedOptions
+
+    reset()
+    settings.automation = { skipDialogue = true }
+    options = { { gossipOptionID = 182, status = 0, rewards = {}, type = "gossip" } }
+    fire("GOSSIP_SHOW")
+    local storySelections = #selectedOptions
+    C_GossipInfo.ForceGossip = originalForceGossip
+
+    assertEqual(vendorSelections, 1, "forced one-option vendor gossip should still open the merchant")
+    assertEqual(storySelections, 0, "forced ordinary dialogue must remain for the player")
 end)
 
 test("campaign confirmation is accepted only for Waffle House's selected skip", function()

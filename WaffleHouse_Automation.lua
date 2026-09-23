@@ -338,9 +338,8 @@ local function HasOptionReward(option)
 end
 
 -- Non-dialogue gossip options open a game service such as a vendor, trainer,
--- bank, flight path, or quest route.  Generic single-option skipping must not
--- consume any of them.  The enum check covers current and future service
--- types without guessing from localized option names.
+-- bank, flight path, or quest route. Generic dialogue skipping must not
+-- consume those services. A sole vendor option is handled separately below.
 local function IsServiceGossipOption(option)
     if not option then return false end
     local optionType = option.type
@@ -352,6 +351,20 @@ local function IsServiceGossipOption(option)
     end
     return option.isVendor == true or option.isPurchaseOption == true
         or option.isTrainer == true or option.isBanker == true or option.isTaxi == true
+end
+
+local function IsVendorGossipOption(option)
+    if not option then return false end
+    local optionType = option.type
+    if type(optionType) == "number" then
+        local vendorType = Enum and Enum.GossipOptionType and Enum.GossipOptionType.Vendor
+        return type(vendorType) == "number" and optionType == vendorType
+    end
+    if type(optionType) == "string" then
+        optionType = optionType:lower()
+        return optionType == "vendor" or optionType == "merchant"
+    end
+    return option.isVendor == true or option.isPurchaseOption == true
 end
 
 local function GetGossipQuestInteractions()
@@ -400,9 +413,9 @@ local function FindKnownQuestAdvanceChoice(activeQuests, options)
 end
 
 -- Outside the curated database, the quest marker itself is enough only when
--- it identifies one quest path among otherwise ordinary NPC dialogue. Service
--- and reward options stay manual, as do real branch choices with two or more
--- quest-marked entries.
+-- it identifies one quest path. Vendor and other service entries may remain
+-- beside that path; the quest continuation still wins. Reward-bearing entries
+-- and real branch choices with two or more quest-marked options stay manual.
 local function FindUniqueQuestAdvanceChoice(options)
     local match
     for _, option in ipairs(options or {}) do
@@ -410,7 +423,7 @@ local function FindUniqueQuestAdvanceChoice(options)
             if IsQuestAdvanceGossipOption(option) then
                 if match then return nil end
                 match = option
-            elseif IsServiceGossipOption(option) or HasOptionReward(option) then
+            elseif HasOptionReward(option) then
                 return nil
             end
         end
@@ -587,11 +600,6 @@ local function HandleGossip(clearPendingCampaign)
     local settings = GetAutomationSettings()
     if not CanAutomate(settings) then return end
 
-    -- Merchant NPCs can expose a generic gossip option alongside the sell UI.
-    -- Never make any automatic selection for the duration of that interaction;
-    -- otherwise refreshed gossip can repeatedly re-open the same dialogue.
-    if IsMerchantInteractionActive() then return end
-
     -- A fresh gossip interaction means an older selection did not ask for
     -- confirmation.  Do not clear this for an options-refresh event: that can
     -- occur while the campaign confirmation dialog is being presented.
@@ -600,8 +608,40 @@ local function HandleGossip(clearPendingCampaign)
     local options = GetGossipOptions()
     if not options then return end
 
-    -- A taught choice always wins. It can define a deliberate route through a
-    -- multi-page NPC menu that the generic single-option skipper must leave alone.
+    -- A verified or uniquely quest-marked continuation is the first action in
+    -- a conversation. Vendor NPCs and quest givers may expose service, offer,
+    -- and continuation entries together; advance the existing quest before
+    -- opening or replaying anything else.
+    if settings.skipDialogue then
+        local activeQuests = C_GossipInfo and C_GossipInfo.GetActiveQuests and C_GossipInfo.GetActiveQuests()
+        local questAdvance = FindKnownQuestAdvanceChoice(activeQuests, options)
+            or FindUniqueQuestAdvanceChoice(options)
+        if questAdvance then
+            local guardKey = ClaimSingleOptionDialogue(options)
+            if not guardKey then return end
+            if not SelectGossipOption(questAdvance.gossipOptionID) then ReleaseSingleOptionDialogueClaim(guardKey) end
+            return
+        end
+    end
+
+    local completeQuest = FindCompletableActiveQuest()
+    if settings.autoCompleteQuests then
+        if completeQuest and SelectGossipActiveQuest(completeQuest) then return end
+    end
+
+    if settings.autoAcceptQuests then
+        local availableQuest = FindEligibleAvailableQuest(settings)
+        if availableQuest and SelectGossipAvailableQuest(availableQuest) then return end
+    end
+
+    -- Merchant NPCs can expose a generic gossip option alongside the sell UI.
+    -- After quest work has had first priority, do not make another automatic
+    -- selection while the merchant interaction remains open.
+    if IsMerchantInteractionActive() then return end
+
+    -- A taught choice wins over the remaining non-quest routes. It can define
+    -- a deliberate path through a multi-page NPC menu that the generic
+    -- single-option skipper must leave alone.
     if TryRememberedChoice(settings, options) then return end
 
     if settings.selectCampaignSkips then
@@ -619,34 +659,23 @@ local function HandleGossip(clearPendingCampaign)
         end
     end
 
-    local completeQuest = FindCompletableActiveQuest()
-    if settings.autoCompleteQuests then
-        if completeQuest and SelectGossipActiveQuest(completeQuest) then return end
-    end
-
-    if settings.autoAcceptQuests then
-        local availableQuest = FindEligibleAvailableQuest(settings)
-        if availableQuest and SelectGossipAvailableQuest(availableQuest) then return end
-    end
-
     if not settings.skipDialogue then return end
-    if C_GossipInfo and C_GossipInfo.ForceGossip and C_GossipInfo.ForceGossip() then return end
     local hasActiveQuest, hasAvailableQuest = GetGossipQuestInteractions()
-    local activeQuests = C_GossipInfo and C_GossipInfo.GetActiveQuests and C_GossipInfo.GetActiveQuests()
-    local knownQuestAdvance = FindKnownQuestAdvanceChoice(activeQuests, options)
-    if knownQuestAdvance then
+    local onlyOption = #options == 1 and options[1]
+    if onlyOption and not hasActiveQuest and not hasAvailableQuest
+        and IsOptionSelectable(onlyOption) and not HasOptionReward(onlyOption)
+        and IsVendorGossipOption(onlyOption) then
+        -- A sole "browse goods" entry is a destination, not a meaningful
+        -- dialogue choice. This is safe even when the NPC forces its gossip
+        -- page open; story dialogue still obeys ForceGossip below.
         local guardKey = ClaimSingleOptionDialogue(options)
         if not guardKey then return end
-        if not SelectGossipOption(knownQuestAdvance.gossipOptionID) then ReleaseSingleOptionDialogueClaim(guardKey) end
+        if not SelectGossipOption(onlyOption.gossipOptionID) then
+            ReleaseSingleOptionDialogueClaim(guardKey)
+        end
         return
     end
-    local uniqueQuestAdvance = FindUniqueQuestAdvanceChoice(options)
-    if uniqueQuestAdvance then
-        local guardKey = ClaimSingleOptionDialogue(options)
-        if not guardKey then return end
-        if not SelectGossipOption(uniqueQuestAdvance.gossipOptionID) then ReleaseSingleOptionDialogueClaim(guardKey) end
-        return
-    end
+    if C_GossipInfo and C_GossipInfo.ForceGossip and C_GossipInfo.ForceGossip() then return end
     if hasAvailableQuest then return end
     if #options ~= 1 or not IsOptionSelectable(options[1]) or HasOptionReward(options[1]) then return end
     if IsServiceGossipOption(options[1]) then return end
@@ -935,7 +964,7 @@ addon.BuildAutomationPage = function(parent, yOffset)
         {
             type = "toggle",
             text = "Skip Single-Option Dialogue",
-            tooltip = "Advance one available no-reward dialogue option when the NPC did not force the menu open. A unique quest-marked option may continue even when ordinary dialogue remains. Competing quest branches, vendors, trainers, banks, travel, rewards, and other services stay open. The same NPC menu can be selected only once per conversation, with a safety stop for looping dialogue.",
+            tooltip = "Advance one available no-reward dialogue option when the NPC did not force the menu open. A unique quest-marked continuation always goes first, including at vendors and quest givers. A sole vendor/browse-goods option opens the merchant afterward. Competing quest branches, trainers, banks, travel, rewards, and other services stay open. The same NPC menu can be selected only once per conversation, with a safety stop for looping dialogue.",
             getValue = function() return GetAutomationSettings().skipDialogue == true end,
             setValue = function(value) GetAutomationSettings().skipDialogue = value and true or false end,
         },
