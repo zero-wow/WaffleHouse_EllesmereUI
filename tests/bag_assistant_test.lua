@@ -32,9 +32,10 @@ assert(source:find("C_Container.GetContainerItemInfo", 1, true),
     "assistant must inspect tab contents rather than guessing a destination")
 assert(source:find("C_Bank.AutoDepositItemsIntoBank", 1, true),
     "assistant needs direct-click deposit support")
-assert(source:find("sortButton:Click(\"LeftButton\")", 1, true),
-    "assistant must route tidy actions through EllesmereUI Bags' existing sort button")
-assert(source:find("if IsInCombat() or not IsBankOpen() then return end", 1, true),
+assert(source:find("C_Container.SortBags()", 1, true)
+    and source:find("addon.SortUnfrozenBagSlots()", 1, true),
+    "assistant must physically sort bags and use the frozen-aware path when needed")
+assert(source:find("if IsInCombat() or not IsBankOpen() then return false", 1, true),
     "deposit actions must be gated behind an open bank and out-of-combat state")
 assert(not source:find("_selectedView%s*="),
     "assistant must not mutate EllesmereUI Bank's private selected view")
@@ -46,8 +47,11 @@ assert(not source:find("OpenBank", 1, true),
 -- room for a future material destination.
 Enum = { ItemClass = { Reagent = 5, Tradegoods = 7, Weapon = 2, Armor = 4, Consumable = 0 },
     BankType = { Character = 1, Account = 2 },
+    BagSlotFlags = { ClassEquipment = 1, ClassConsumables = 2,
+        ClassProfessionGoods = 4, ClassReagents = 8, ClassJunk = 16 },
     BagIndex = { CharacterBankTab_1 = 100, CharacterBankTab_2 = 101,
         CharacterBankTab_3 = 102, CharacterBankTab_4 = 103, AccountBankTab_1 = 104 } }
+bit = { bor = function(a, b) return a + b end }
 local containers = {
     [0] = { { itemID = 9001 }, false },
     [100] = { { itemID = 9001 }, { itemID = 9001 } },
@@ -99,8 +103,12 @@ EUI_BankFrame = {
     },
 }
 local events = {}
+local bankEventFrame
 local frameMethods = {}
-function frameMethods:RegisterEvent(event) events[event] = true end
+function frameMethods:RegisterEvent(event)
+    events[event] = true
+    if event == "BANKFRAME_OPENED" then bankEventFrame = self end
+end
 function frameMethods:SetScript(name, callback) self.scripts[name] = callback end
 function frameMethods:SetSize(width, height) self.width, self.height = width, height end
 function frameMethods:SetHeight(height) self.height = height end
@@ -172,16 +180,16 @@ assert(plan.tabCount == 4 and #plan.cleanups == 1 and plan.cleanups[1].name == "
 assert(#plan.outdated == 1 and plan.outdated[1].name == "Outdated Helm"
     and plan.outdated[1].level == 160 and plan.threshold == 190,
     "only gear at least 50 item levels below equipped average should be flagged")
-assert(plan.cleanups[1].depositFlags == 4,
-    "automatic tab organization must preserve existing deposit flags")
+assert(plan.cleanups[1].depositFlags == 12,
+    "automatic tab organization must assign matching profession-goods and reagent filters")
 
 local updates = {}
 C_Bank.UpdateBankTabSettings = function(...) updates[#updates + 1] = { ... } end
 local changed = addon.ApplyBagAssistantTabCleanup()
 assert(changed and #updates == 1 and updates[1][1] == Enum.BankType.Character
     and updates[1][2] == 102 and updates[1][3] == "Materials 3"
-    and updates[1][4] == 457 and updates[1][5] == 4,
-    "one cleanup click must apply only generic-tab name/icon updates")
+    and updates[1][4] == 457 and updates[1][5] == 12,
+    "one cleanup click must apply generic-tab name, icon, and deposit settings")
 
 local clicked
 local view = { _viewIdx = -3, IsVisible = function() return true end,
@@ -212,8 +220,8 @@ assistantButton:Click("LeftButton")
 local menu = WaffleHouseBagAssistantMenu
 assert(menu and menu:IsShown() and menu.width == 390 and menu.height == 480,
     "expanded bank planner must open in a bounded menu")
-assert(#updates == 2 and menu.hint.text:find("Submitted 1 tab name/icon update", 1, true),
-    "opening the assistant at a bank must auto-apply qualifying generic-tab edits from the user click")
+assert(#updates == 2 and menu.hint.text:find("Submitted 1 tab settings update", 1, true),
+    "first assistant click must auto-apply qualifying bank-tab settings")
 assert(menu.viewButtons[-3]._enabled and menu.organize._enabled and menu.withdrawGear._enabled,
     "bank views, eligible generic-tab cleanup, and exact gear review must be actionable")
 assert(not menu.openTab._enabled and not menu.editTab._enabled,
@@ -243,7 +251,84 @@ C_PlayerInteractionManager = { IsInteractingWithNpcOfType = function() return tr
 local beforePortable = #updates
 assert(addon.ApplyBagAssistantTabCleanup() and #updates == beforePortable + 1
     and updates[#updates][1] == Enum.BankType.Account and updates[#updates][2] == 104
-    and updates[#updates][4] == 458 and updates[#updates][5] == 8,
-    "portable warband access must update only account tabs and preserve deposit flags")
+    and updates[#updates][4] == 458 and updates[#updates][5] == 12,
+    "portable warband access must update only account tabs and set matching deposit flags")
+
+-- Cross-storage categorization must be one exact, click-triggered move into
+-- a named category tab, and only when the account bank accepts that item.
+C_PlayerInteractionManager.IsInteractingWithNpcOfType = function() return false end
+C_Bank.FetchPurchasedBankTabData = function(bankType)
+    if bankType == Enum.BankType.Account then
+        return { { name = "Materials 5", icon = 458, depositFlags = 12 } }
+    end
+    return { { name = "Materials" }, { name = "Overflow" },
+        { name = "Materials 3", icon = 457, depositFlags = 12 },
+        { name = "Transmog Vault", icon = 124 } }
+end
+ItemLocation = { CreateFromBagAndSlot = function(_, bag, slot) return { bag = bag, slot = slot } end }
+C_Bank.IsItemAllowedInBankType = function(_, location) return location.bag == 100 end
+local categoryMove = addon.GetBagAssistantPlan().move
+assert(categoryMove and categoryMove.source.bagID == 100 and categoryMove.target.bagID == 104,
+    "categorization must target a matching named Warband tab for an eligible bank item")
+assert(addon.MoveBagAssistantCategoryItem(), "approved category move must run from one click")
+assert(not containers[100][1] and containers[104][5] and containers[104][5].itemID == 9001,
+    "one category click must move exactly the proposed item and preserve other slots")
+local deposits = 0
+C_Bank.AutoDepositItemsIntoBank = function() deposits = deposits + 1 end
+addon.HasFrozenBagSlots = function() return true end
+addon.RefreshBagAssistant()
+assert(not menu.reagents._enabled and not menu.warbound._enabled
+    and addon.GetBagAssistantNextTask() ~= "deposit"
+    and addon.GetBagAssistantNextTask() ~= "warband" and deposits == 0,
+    "bulk deposits must never include frozen bag items")
+
+containers[100] = { { itemID = 9001 }, { itemID = 9001 },
+    { itemID = 9001 }, { itemID = 9001 } }
+C_Bank.FetchPurchasedBankTabData = function(bankType)
+    if bankType == Enum.BankType.Account then
+        return { { name = "Materials 5", icon = 458, depositFlags = 12 } }
+    end
+    return { { name = "My Special Mats", icon = 777, depositFlags = 0 },
+        { name = "Overflow" }, { name = "Materials 3", icon = 457, depositFlags = 12 },
+        { name = "Transmog Vault", icon = 124 } }
+end
+local customPlan = addon.GetBagAssistantPlan()
+assert(#customPlan.cleanups == 1 and customPlan.cleanups[1].bagID == 100
+    and customPlan.cleanups[1].name == "My Special Mats"
+    and customPlan.cleanups[1].icon == 777 and customPlan.cleanups[1].depositFlags == 12,
+    "custom tab names and icons must survive an automatic high-confidence deposit-filter update")
+
+addon.HasFrozenBagSlots = function() return false end
+C_Bank.FetchPurchasedBankTabData = function(bankType)
+    if bankType == Enum.BankType.Account then
+        return { { name = "Materials 5", icon = 458, depositFlags = 12 } }
+    end
+    return { { name = "My Special Mats", icon = 777, depositFlags = 12 },
+        { name = "Overflow" }, { name = "Materials 3", icon = 457, depositFlags = 12 },
+        { name = "Transmog Vault", icon = 124 } }
+end
+containers[102][6] = { itemID = 9001 }
+containers[104][5] = false
+C_Bank.IsItemAllowedInBankType = function() return false end
+local bagSorts, bankSorts = 0, {}
+C_Container.SortBags = function() bagSorts = bagSorts + 1 end
+C_Container.SortBank = function(bankType) bankSorts[#bankSorts + 1] = bankType end
+bankEventFrame.scripts.OnEvent(nil, "BANKFRAME_OPENED")
+assert(addon.GetBagAssistantNextTask() == "deposit", "sequence must start with reagent deposit")
+assistantButton:Click("LeftButton")
+assert(deposits == 1 and addon.GetBagAssistantNextTask() == "warband",
+    "after reagents, the next click must offer a Warbound deposit")
+assistantButton:Click("LeftButton")
+assert(deposits == 2 and addon.GetBagAssistantNextTask() == "sort_bags",
+    "after both deposit types, the next click must advance to physical bag sorting")
+assistantButton:Click("LeftButton")
+assert(bagSorts == 1 and addon.GetBagAssistantNextTask() == "sort_character",
+    "bag sort must run once before character-bank sorting")
+assistantButton:Click("LeftButton")
+assert(bankSorts[1] == Enum.BankType.Character and addon.GetBagAssistantNextTask() == "sort_warband",
+    "character bank must sort before Warband bank")
+assistantButton:Click("LeftButton")
+assert(bankSorts[2] == Enum.BankType.Account and addon.GetBagAssistantNextTask() == "menu",
+    "assistant must finish the click sequence after sorting the Warband bank")
 
 print("bag assistant static tests passed")

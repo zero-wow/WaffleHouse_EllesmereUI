@@ -5,10 +5,13 @@
 local SOURCE = arg[1] or "WaffleHouse_BagSlotFreeze.lua"
 
 local events = {}
+local eventHandler
 function CreateFrame()
     local frame = {}
     function frame:RegisterEvent(event) events[event] = true end
-    function frame:SetScript() end
+    function frame:SetScript(name, callback)
+        if name == "OnEvent" then eventHandler = callback end
+    end
     return frame
 end
 
@@ -76,8 +79,16 @@ EUI_Bags = {
     _sortBtn = {
         EnableMouse = function(_, enabled) EUI_Bags.sortEnabled = enabled end,
         icon = { SetAlpha = function(_, alpha) EUI_Bags.sortAlpha = alpha end },
+        GetScript = function(self) return self.onClick end,
+        SetScript = function(self, _, callback) self.onClick = callback end,
+        Click = function(self) self.onClick(self, "LeftButton") end,
     },
 }
+local nativeSortCalls = 0
+EUI_Bags._sortBtn.onClick = function()
+    nativeSortCalls = nativeSortCalls + 1
+    slots[0][3], slots[0][4] = slots[0][4], slots[0][3]
+end
 EUI_CategoryManager = {
     ClassifyAll = function(_, items)
         for _, item in ipairs(items) do item.categoryIndex = 1 end
@@ -103,6 +114,19 @@ assert(EUI_Bags.sortEnabled == true, "sort control must be restored after the Wa
 assert(events.MODIFIER_STATE_CHANGED, "modifier changes must refresh the click-to-freeze preview")
 assert(events.BAG_UPDATE and events.BAG_UPDATE_DELAYED,
     "bag updates must reapply frozen-slot visuals after item buttons are refreshed or recycled")
+
+-- The host's OneBag/MultiBag sort button can be pressed when Main Bags is
+-- collapsed or another category is selected. The frozen guard must not depend
+-- on the currently rendered section, or native SortBags moves locked items.
+eventHandler(nil, "PLAYER_LOGIN")
+EUI_Bags._sortBtn:Click()
+assert(nativeSortCalls == 0 and slots[0][3].itemID == 303,
+    "host sort must preserve frozen slots even when Main Bags is not visible")
+EUI_Bags._sortBtn:SetScript("OnClick", function() nativeSortCalls = nativeSortCalls + 1 end)
+eventHandler(nil, "BAG_UPDATE_DELAYED")
+EUI_Bags._sortBtn:Click()
+assert(nativeSortCalls == 0 and slots[0][3].itemID == 303,
+    "a replaced host sort handler must be rewrapped before another sort")
 
 -- Real container moves can be rejected while a prior move is briefly locked.
 -- A failed first drop must be retried rather than leaving an ordinary gap.

@@ -21,7 +21,16 @@ local assistantButton
 local assistantMenu
 local refreshPending
 local autoOrganizedThisBankVisit
+local autoOrganizedAt
+local attemptedDepositMaterialCount
+local attemptedWarbandDepositThisBankVisit
+local sortedBagsThisBankVisit
+local sortedCharacterBankThisBankVisit
+local sortedWarbandBankThisBankVisit
+local pendingCategoryMove
 local UpdateMenu
+local GetNextTask
+local AdvanceAssistant
 
 local function GetSettings()
     return addon.GetSettings and addon.GetSettings() or {}
@@ -37,11 +46,6 @@ end
 
 local function GetBags()
     return _G.EUI_Bags
-end
-
-local function GetSortButton()
-    local bags = GetBags()
-    return bags and bags._sortBtn
 end
 
 local function GetBank()
@@ -96,7 +100,7 @@ end
 
 -- The bank addon publishes physical tab metadata. The aggregate OneBank and
 -- All Warbank entries are views, not separate storage destinations.
-local function FindBestMaterialTab()
+local function FindBestMaterialTab(warbandOnly)
     local bank = GetBank()
     local tabs = bank and bank._allTabs
     if type(tabs) ~= "table" or #tabs == 0 then return nil, 0 end
@@ -104,8 +108,11 @@ local function FindBestMaterialTab()
     local bestAvailable, availableScore
     local bestFull, fullScore
     local tabCount = 0
+    local portable = IsPortableWarbandBank()
     for index, tab in ipairs(tabs) do
-        if type(tab) == "table" and type(tab.bagID) == "number" then
+        if type(tab) == "table" and type(tab.bagID) == "number"
+            and (warbandOnly == nil or (tab.isWarband == true) == warbandOnly)
+            and (not portable or tab.isWarband == true) then
             tabCount = tabCount + 1
             local materials, freeSlots = CountMaterialStacks(tab.bagID, tab.numSlots)
             -- Existing material stacks are a strong categorization signal;
@@ -183,6 +190,16 @@ local function IsGenericTabName(name)
     return name:match("^[Tt]ab %d+$") ~= nil or name:match("^[Bb]ank [Tt]ab %d+$") ~= nil
 end
 
+local function SuggestedDepositFlags(category)
+    local flags = Enum and Enum.BagSlotFlags
+    if not flags or not bit or not bit.bor then return nil end
+    if category == "Materials" and flags.ClassProfessionGoods and flags.ClassReagents then
+        return bit.bor(flags.ClassProfessionGoods, flags.ClassReagents)
+    end
+    if category == "Gear" then return flags.ClassEquipment end
+    if category == "Consumables" then return flags.ClassConsumables end
+end
+
 local function GetVerifiedTabData(tab, characterData, accountData)
     -- _allTabs may contain generic fallback names when the bank's metadata
     -- request has not completed. Never auto-rename from those placeholders.
@@ -207,7 +224,7 @@ local function GetEquippedItemLevel()
 end
 
 local function ScanBankPlan()
-    local plan = { cleanups = {}, outdated = {}, tabCount = 0 }
+    local plan = { cleanups = {}, outdated = {}, tabCount = 0, categoryTabs = {}, items = {} }
     if IsInCombat() or not IsBankOpen() then return plan end
     if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo) then
         return plan
@@ -237,6 +254,13 @@ local function ScanBankPlan()
                         local link = info.hyperlink or (C_Container.GetContainerItemLink
                             and C_Container.GetContainerItemLink(tab.bagID, slot))
                         local category = GetTabCategory(GetItemClass(info.itemID, link))
+                        if category then
+                            plan.items[#plan.items + 1] = {
+                                bagID = tab.bagID, slot = slot, itemID = info.itemID,
+                                link = link, category = category, isWarband = tab.isWarband == true,
+                                locked = info.isLocked == true,
+                            }
+                        end
                         if category then
                             counts[category] = (counts[category] or 0) + 1
                             if SafeNumber(info.iconFileID) then
@@ -274,14 +298,29 @@ local function ScanBankPlan()
             end
             local liveData, ordinal = GetVerifiedTabData(tab, characterData, accountData)
             local rawName = liveData and (liveData.name or (tab.isWarband and "Tab " or "Bank Tab ") .. ordinal)
-            if category and used >= 4 and dominant / used >= 0.7 and rawName
-                and IsGenericTabName(rawName) then
-                local suggestedName = category .. " " .. index
-                local suggestedIcon = icons[category] or liveData.icon
-                if SafeNumber(suggestedIcon) and (suggestedName ~= rawName or suggestedIcon ~= liveData.icon) then
+            local namedCategory
+            if rawName then
+                for _, kind in ipairs({ "Materials", "Gear", "Consumables" }) do
+                    if rawName:match("^" .. kind .. " %d+$") then namedCategory = kind; break end
+                end
+            end
+            if namedCategory then
+                plan.categoryTabs[#plan.categoryTabs + 1] = {
+                    bagID = tab.bagID, name = rawName, category = namedCategory,
+                    isWarband = tab.isWarband == true,
+                    freeSlots = math.max(0, slots - used),
+                }
+            end
+            if category and used >= 4 and dominant / used >= 0.7 and rawName and liveData then
+                local generic = IsGenericTabName(rawName)
+                local suggestedName = generic and (category .. " " .. index) or rawName
+                local suggestedIcon = generic and (icons[category] or liveData.icon) or liveData.icon
+                local depositFlags = SuggestedDepositFlags(category) or liveData.depositFlags or 0
+                if SafeNumber(suggestedIcon) and (suggestedName ~= rawName
+                    or suggestedIcon ~= liveData.icon or depositFlags ~= (liveData.depositFlags or 0)) then
                     plan.cleanups[#plan.cleanups + 1] = {
                         index = index, bagID = tab.bagID, isWarband = tab.isWarband == true,
-                        name = suggestedName, icon = suggestedIcon, depositFlags = liveData.depositFlags or 0,
+                        name = suggestedName, icon = suggestedIcon, depositFlags = depositFlags,
                     }
                 end
             end
@@ -292,10 +331,50 @@ local function ScanBankPlan()
         if a.bagID ~= b.bagID then return a.bagID < b.bagID end
         return a.slot < b.slot
     end)
+    table.sort(plan.categoryTabs, function(left, right)
+        if left.isWarband ~= right.isWarband then return left.isWarband end
+        return left.bagID < right.bagID
+    end)
+    local organizedSource = {}
+    for _, tab in ipairs(plan.categoryTabs) do organizedSource[tab.bagID] = tab.category end
+    for _, item in ipairs(plan.items) do
+        if not item.locked and organizedSource[item.bagID] ~= item.category then
+            for _, target in ipairs(plan.categoryTabs) do
+                if target.category == item.category and target.bagID ~= item.bagID
+                    and target.freeSlots > 0 and (not item.isWarband or target.isWarband)
+                    and (not IsPortableWarbandBank() or item.isWarband) then
+                    local allowed = true
+                    if target.isWarband and not item.isWarband then
+                        allowed = false
+                        if C_Bank and C_Bank.IsItemAllowedInBankType and ItemLocation
+                            and ItemLocation.CreateFromBagAndSlot then
+                            local location = ItemLocation:CreateFromBagAndSlot(item.bagID, item.slot)
+                            local result = C_Bank.IsItemAllowedInBankType(Enum.BankType.Account, location)
+                            allowed = (not issecretvalue or not issecretvalue(result)) and result == true
+                        end
+                    end
+                    if allowed then
+                        plan.move = { source = item, target = target }
+                        break
+                    end
+                end
+            end
+        end
+        if plan.move then break end
+    end
     return plan
 end
 
 addon.GetBagAssistantPlan = ScanBankPlan
+
+local function CountAccessibleCleanups(plan)
+    local portable = IsPortableWarbandBank()
+    local count = 0
+    for _, change in ipairs(plan.cleanups) do
+        if change.isWarband or not portable then count = count + 1 end
+    end
+    return count
+end
 
 local function GetAdvice()
     local carried = CountCarriedMaterialStacks()
@@ -347,7 +426,9 @@ local function ShowTooltip(owner)
     GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
     GameTooltip:SetText("Bag Assistant", 1, 1, 1)
     GameTooltip:AddLine(advice.text, 0.72, 0.72, 0.72, true)
-    GameTooltip:AddLine("Click for deposit actions and bank guidance.", ACCENT_R, ACCENT_G, ACCENT_B, true)
+    local _, nextLabel = GetNextTask and GetNextTask()
+    GameTooltip:AddLine("Left-click: " .. (nextLabel or "Open the planner"), ACCENT_R, ACCENT_G, ACCENT_B, true)
+    GameTooltip:AddLine("Right-click: open the full planner.", 0.72, 0.72, 0.72, true)
     GameTooltip:Show()
 end
 
@@ -394,23 +475,46 @@ local function SetMenuAction(button, text, enabled, callback)
 end
 
 local function Deposit(bankType)
-    if IsInCombat() or not IsBankOpen() then return end
-    if not (C_Bank and C_Bank.AutoDepositItemsIntoBank and bankType) then return end
+    if IsInCombat() or not IsBankOpen() then return false, "Open the bank out of combat first." end
+    if addon.HasFrozenBagSlots and addon.HasFrozenBagSlots() then
+        return false, "Frozen bag items are present; bulk deposit could move them. Unfreeze them or use a selective transfer."
+    end
+    if not (C_Bank and C_Bank.AutoDepositItemsIntoBank and bankType) then
+        return false, "Bank deposit is unavailable."
+    end
     -- This runs synchronously from the user's click; never queue or replay a
     -- protected inventory action from an event/timer.
     C_Bank.AutoDepositItemsIntoBank(bankType)
     C_Timer.After(0, function()
         if addon.RefreshBagAssistant then addon.RefreshBagAssistant() end
     end)
+    return true, "Asked the bank to deposit eligible items. Check the result before another transfer."
 end
 
 local function TidyMainBags()
-    if IsInCombat() then return end
-    local sortButton = GetSortButton()
-    if not (sortButton and sortButton.Click) then return end
-    -- Route through EllesmereUI Bags' own button.  That preserves its normal
-    -- visual sort and Waffle House's frozen-slot sort interception alike.
-    sortButton:Click("LeftButton")
+    if IsInCombat() then return false, "Wait until combat ends to sort bags." end
+    if addon.HasFrozenBagSlots and addon.HasFrozenBagSlots() then
+        if not addon.SortUnfrozenBagSlots then return false, "Frozen-aware sorting is unavailable." end
+        addon.SortUnfrozenBagSlots()
+        return true, "Sorting only unfrozen Main Bags items."
+    end
+    if not (C_Container and C_Container.SortBags) then return false, "Sort Bags is unavailable." end
+    -- The host button does a visual-only sort in category views. The assistant
+    -- always requests a physical Main Bags sort, independently of that view.
+    C_Container.SortBags()
+    return true, "Asked the client to sort Main Bags."
+end
+
+local function SortBank(bankType)
+    if IsInCombat() or not IsBankOpen() then return false, "Open the bank out of combat first." end
+    if not (C_Container and C_Container.SortBank and bankType) then
+        return false, "Bank sorting is unavailable."
+    end
+    -- Same client API used by EllesmereUI Bags' bank sort button.  This runs
+    -- only from the user's click, never from the bank event or a timer.
+    C_Container.SortBank(bankType)
+    return true, "Asked the bank to sort its "
+        .. (bankType == Enum.BankType.Account and "Warband" or "character") .. " tabs."
 end
 
 local function ApplyTabCleanup()
@@ -421,18 +525,120 @@ local function ApplyTabCleanup()
     for _, change in ipairs(plan.cleanups) do
         if change.isWarband or not IsPortableWarbandBank() then
             local bankType = change.isWarband and Enum.BankType.Account or Enum.BankType.Character
-            -- One explicit click applies the high-confidence batch. Preserve
-            -- each tab's existing deposit flags, and never overwrite a custom
-            -- name: ScanBankPlan only proposes changes for generic names.
+            -- One explicit click applies the high-confidence batch. Custom
+            -- names/icons stay intact; their deposit category may be updated.
             C_Bank.UpdateBankTabSettings(bankType, change.bagID, change.name,
                 change.icon, change.depositFlags)
             submitted = submitted + 1
         end
     end
-    if submitted == 0 then return false, "No generic tabs qualify for cleanup." end
-    return true, "Submitted " .. submitted .. " tab name/icon update" .. (submitted == 1 and "" or "s") .. "."
+    if submitted == 0 then return false, "No tabs qualify for automatic settings." end
+    return true, "Submitted " .. submitted .. " tab settings update" .. (submitted == 1 and "" or "s") .. "."
 end
 addon.ApplyBagAssistantTabCleanup = ApplyTabCleanup
+
+GetNextTask = function()
+    if IsInCombat() then return "wait", "Wait until combat ends" end
+    if not IsBankOpen() then return "visit", "Visit a bank, then click again" end
+    local advice = GetAdvice()
+    if advice.state == "loading" then return "wait", "Wait for bank tabs to load" end
+
+    local plan = ScanBankPlan()
+    if autoOrganizedThisBankVisit and CountAccessibleCleanups(plan) > 0 then
+        if GetTime and autoOrganizedAt and GetTime() - autoOrganizedAt < 3 then
+            return "wait", "Wait for bank tab settings to refresh"
+        end
+        return "menu", "Check unconfirmed bank tab settings"
+    end
+    if not autoOrganizedThisBankVisit and C_Bank and C_Bank.UpdateBankTabSettings
+        and Enum and Enum.BankType and CountAccessibleCleanups(plan) > 0 then
+        return "organize", "Organize bank tab settings"
+    end
+
+    local characterTab = not IsPortableWarbandBank() and FindBestMaterialTab(false)
+    local frozenBags = addon.HasFrozenBagSlots and addon.HasFrozenBagSlots()
+    if not frozenBags and advice.carried > 0 and characterTab and characterTab.freeSlots > 0
+        and attemptedDepositMaterialCount ~= advice.carried
+        and C_Bank and C_Bank.AutoDepositItemsIntoBank
+        and Enum and Enum.BankType and Enum.BankType.Character then
+        return "deposit", "Deposit eligible reagents"
+    end
+    local warbandTab = FindBestMaterialTab(true)
+    if not frozenBags and warbandTab and warbandTab.freeSlots > 0 and not attemptedWarbandDepositThisBankVisit
+        and C_Bank and C_Bank.AutoDepositItemsIntoBank
+        and Enum and Enum.BankType and Enum.BankType.Account then
+        return "warband", "Deposit eligible Warbound items"
+    end
+    if pendingCategoryMove then
+        local source = pendingCategoryMove.source
+        local oldItem = C_Container.GetContainerItemInfo(source.bagID, source.slot)
+        local destItem = C_Container.GetContainerItemInfo(pendingCategoryMove.bagID, pendingCategoryMove.slot)
+        if oldItem and oldItem.itemID == source.itemID and not destItem then
+            return "wait", "Wait for the last bank transfer"
+        end
+        pendingCategoryMove = nil
+    end
+    if plan.move and C_Container and C_Container.PickupContainerItem and CursorHasItem
+        and not CursorHasItem() then
+        return "categorize", "Move " .. plan.move.source.category .. " to " .. plan.move.target.name
+    end
+    if not sortedBagsThisBankVisit and ((frozenBags and addon.SortUnfrozenBagSlots)
+        or (C_Container and C_Container.SortBags)) then
+        return "sort_bags", "Sort Main Bags"
+    end
+    if not sortedCharacterBankThisBankVisit and not IsPortableWarbandBank()
+        and characterTab and C_Container and C_Container.SortBank
+        and Enum and Enum.BankType and Enum.BankType.Character then
+        return "sort_character", "Sort character bank"
+    end
+    if not sortedWarbandBankThisBankVisit and warbandTab
+        and C_Container and C_Container.SortBank
+        and Enum and Enum.BankType and Enum.BankType.Account then
+        return "sort_warband", "Sort Warband bank"
+    end
+    return "menu", "Review other bank actions"
+end
+addon.GetBagAssistantNextTask = GetNextTask
+
+local function MoveCategoryItem()
+    if IsInCombat() or not IsBankOpen() or (CursorHasItem and CursorHasItem()) then
+        return false, "Open the bank out of combat with an empty cursor."
+    end
+    if not (C_Container and C_Container.PickupContainerItem and CursorHasItem) then
+        return false, "Bank transfers are unavailable."
+    end
+    local proposal = ScanBankPlan().move
+    if not proposal then return false, "No safe category transfer is ready." end
+    local source, target = proposal.source, proposal.target
+    local current = C_Container.GetContainerItemInfo(source.bagID, source.slot)
+    if not (current and current.itemID == source.itemID and not current.isLocked) then
+        return false, "The source item changed; scan again."
+    end
+    if source.link and current.hyperlink and source.link ~= current.hyperlink then
+        return false, "The source item changed; scan again."
+    end
+    local slots = C_Container.GetContainerNumSlots(target.bagID) or 0
+    local destSlot
+    for slot = 1, slots do
+        if not C_Container.GetContainerItemInfo(target.bagID, slot) then
+            destSlot = slot
+            break
+        end
+    end
+    if not destSlot then return false, "The destination tab filled; scan again." end
+    C_Container.PickupContainerItem(source.bagID, source.slot)
+    if not CursorHasItem() then return false, "Could not pick up the item." end
+    C_Container.PickupContainerItem(target.bagID, destSlot)
+    if CursorHasItem() then
+        if not C_Container.GetContainerItemInfo(source.bagID, source.slot) then
+            C_Container.PickupContainerItem(source.bagID, source.slot)
+        end
+        return false, "Could not place the item. Check your cursor."
+    end
+    pendingCategoryMove = { source = source, bagID = target.bagID, slot = destSlot }
+    return true, "Moved one " .. source.category .. " item to " .. target.name .. ". Click again for the next item."
+end
+addon.MoveBagAssistantCategoryItem = MoveCategoryItem
 
 local function FindFreeCarriedSlot()
     if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo) then return end
@@ -495,27 +701,32 @@ UpdateMenu = function()
     local plan = ScanBankPlan()
     assistantMenu.plan = plan
     local viewControls = IsBankOpen() and GetBankViewButtons() or {}
+    local frozenBags = addon.HasFrozenBagSlots and addon.HasFrozenBagSlots()
 
-    local canDepositCharacter = IsBankOpen() and not IsInCombat() and not IsPortableWarbandBank()
+    local canDepositCharacter = not frozenBags and IsBankOpen() and not IsInCombat() and not IsPortableWarbandBank()
         and C_Bank and C_Bank.AutoDepositItemsIntoBank and Enum and Enum.BankType and Enum.BankType.Character
         and true or false
-    local canDepositWarband = IsBankOpen() and not IsInCombat() and C_Bank and C_Bank.AutoDepositItemsIntoBank
+    local canDepositWarband = not frozenBags and IsBankOpen() and not IsInCombat()
+        and C_Bank and C_Bank.AutoDepositItemsIntoBank
         and Enum and Enum.BankType and Enum.BankType.Account and true or false
-    local sortButton = GetSortButton()
-    local canTidy = not IsInCombat() and sortButton and sortButton.Click and true or false
+    local nextTask, nextLabel = GetNextTask()
 
     SetMenuAction(assistantMenu.reagents,
-        canDepositCharacter and "Deposit Reagents" or "Deposit Reagents — visit a character bank",
+        canDepositCharacter and "Deposit Reagents"
+            or (frozenBags and "Deposit Reagents — frozen slots present"
+                or "Deposit Reagents — visit a character bank"),
         canDepositCharacter,
         function() Deposit(Enum.BankType.Character) end)
     SetMenuAction(assistantMenu.warbound,
-        canDepositWarband and "Deposit Warbound Items" or "Deposit Warbound Items — bank unavailable",
+        canDepositWarband and "Deposit Warbound Items"
+            or (frozenBags and "Deposit Warbound Items — frozen slots present"
+                or "Deposit Warbound Items — bank unavailable"),
         canDepositWarband,
         function() Deposit(Enum.BankType.Account) end)
     SetMenuAction(assistantMenu.tidy,
-        canTidy and "Tidy & Categorize Main Bags" or "Tidy Main Bags — unavailable",
-        canTidy,
-        TidyMainBags)
+        "Tidy & Categorize All",
+        nextTask ~= "wait" and not IsInCombat(),
+        AdvanceAssistant)
 
     for _, view in ipairs(BANK_VIEWS) do
         local control = viewControls[view.index]
@@ -554,11 +765,12 @@ UpdateMenu = function()
         SetMenuAction(assistantMenu.editTab, "Edit tab settings", false)
     end
 
-    local canOrganize = IsBankOpen() and not IsInCombat() and #plan.cleanups > 0
+    local accessibleCleanups = CountAccessibleCleanups(plan)
+    local canOrganize = IsBankOpen() and not IsInCombat() and accessibleCleanups > 0
         and C_Bank and C_Bank.UpdateBankTabSettings and Enum and Enum.BankType and true or false
     SetMenuAction(assistantMenu.organize,
-        #plan.cleanups > 0 and ("Organize " .. #plan.cleanups .. " generic tab" .. (#plan.cleanups == 1 and "" or "s")
-            .. " (name + icon)") or "No generic tabs qualify for auto-organize",
+        accessibleCleanups > 0 and ("Organize " .. accessibleCleanups .. " bank tab" .. (accessibleCleanups == 1 and "" or "s")
+            .. " (name, icon, deposit settings)") or "No tabs qualify for auto-organize",
         canOrganize,
         function()
             local _, message = ApplyTabCleanup()
@@ -719,12 +931,65 @@ local function ToggleMenu()
         local submitted, message = ApplyTabCleanup()
         if submitted then
             autoOrganizedThisBankVisit = true
+            autoOrganizedAt = GetTime and GetTime() or nil
             autoCleanupNotice = message
         end
     end
     UpdateMenu()
     menu:Show()
     if autoCleanupNotice then SetMenuNotice(autoCleanupNotice) end
+end
+
+AdvanceAssistant = function()
+    if IsInCombat() then return end
+    local task = GetNextTask()
+    local message
+    if task == "organize" then
+        local submitted
+        submitted, message = ApplyTabCleanup()
+        if submitted then
+            autoOrganizedThisBankVisit = true
+            autoOrganizedAt = GetTime and GetTime() or nil
+        end
+    elseif task == "deposit" then
+        local carried = CountCarriedMaterialStacks()
+        local deposited
+        deposited, message = Deposit(Enum.BankType.Character)
+        if deposited then attemptedDepositMaterialCount = carried end
+    elseif task == "warband" then
+        local deposited
+        deposited, message = Deposit(Enum.BankType.Account)
+        if deposited then attemptedWarbandDepositThisBankVisit = true end
+    elseif task == "categorize" then
+        local moved
+        moved, message = MoveCategoryItem()
+    elseif task == "sort_bags" then
+        local sorted
+        sorted, message = TidyMainBags()
+        if sorted then sortedBagsThisBankVisit = true end
+    elseif task == "sort_character" then
+        local sorted
+        sorted, message = SortBank(Enum.BankType.Character)
+        if sorted then sortedCharacterBankThisBankVisit = true end
+    elseif task == "sort_warband" then
+        local sorted
+        sorted, message = SortBank(Enum.BankType.Account)
+        if sorted then sortedWarbandBankThisBankVisit = true end
+    elseif task == "visit" then
+        message = "Visit a banker, then click Bag Assistant again to continue."
+    elseif task == "wait" then
+        message = "The next step is not ready yet. Try again when the bank has loaded or combat ends."
+    else
+        message = "No automatic step remains. Choose a specific action from the planner."
+    end
+
+    HideTooltip()
+    local menu = BuildMenu()
+    menu:ClearAllPoints()
+    menu:SetPoint("TOPRIGHT", assistantButton, "BOTTOMRIGHT", 0, -5)
+    if not menu:IsShown() then menu:Show() else UpdateMenu() end
+    SetMenuNotice(message)
+    UpdateButton()
 end
 
 local function CreateAssistantButton()
@@ -752,7 +1017,14 @@ local function CreateAssistantButton()
         self.icon:SetAlpha(0.9)
         HideTooltip()
     end)
-    button:SetScript("OnClick", ToggleMenu)
+    if button.RegisterForClicks then button:RegisterForClicks("LeftButtonUp", "RightButtonUp") end
+    button:SetScript("OnClick", function(_, mouseButton)
+        if mouseButton == "RightButton" or GetSettings().bagAssistantAdvanceOnClick == false then
+            ToggleMenu()
+        else
+            AdvanceAssistant()
+        end
+    end)
     assistantButton = button
     UpdateButton()
     return button
@@ -791,6 +1063,13 @@ events:SetScript("OnEvent", function(_, event, name)
     if event == "ADDON_LOADED" and name ~= "EllesmereUIBags" then return end
     if event == "BANKFRAME_OPENED" or event == "BANKFRAME_CLOSED" then
         autoOrganizedThisBankVisit = nil
+        autoOrganizedAt = nil
+        attemptedDepositMaterialCount = nil
+        attemptedWarbandDepositThisBankVisit = nil
+        sortedBagsThisBankVisit = nil
+        sortedCharacterBankThisBankVisit = nil
+        sortedWarbandBankThisBankVisit = nil
+        pendingCategoryMove = nil
     end
     QueueRefresh()
     -- The bank addon's tab discovery is intentionally deferred one frame after

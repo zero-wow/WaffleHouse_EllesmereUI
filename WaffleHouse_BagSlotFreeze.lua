@@ -20,7 +20,8 @@ local MARKER_POSITION_ORDER = {
     "BOTTOMLEFT", "BOTTOM", "BOTTOMRIGHT",
 }
 local visuals = setmetatable({}, { __mode = "k" })
-local sortHookInstalled
+local sortHookButton
+local sortHookHandler
 local refreshPending
 local refreshFollowupPending
 local visualHooksInstalled
@@ -339,20 +340,8 @@ local function HasFrozenMainBagSlots()
     end
     return false
 end
-
-local function IsMainBagsViewVisible()
-    local bags = _G.EUI_Bags
-    local child = bags and bags._scrollChild
-    local mainLabel = GetMainBagsLabel()
-    if not child then return false end
-    for _, candidate in ipairs({ child:GetChildren() }) do
-        local label = candidate and candidate._label
-        local text = label and label.GetText and label:GetText()
-        if type(text) == "string" and text:sub(1, #mainLabel) == mainLabel and candidate:IsShown() then
-            return true
-        end
-    end
-    return false
+addon.HasFrozenBagSlots = function()
+    return GetSettings().bagSlotFreezeEnabled ~= false and HasFrozenMainBagSlots()
 end
 
 local function ItemNameAndQuality(item)
@@ -593,17 +582,21 @@ addon.SortUnfrozenBagSlots = SortUnfrozenSlots
 local function InstallSortHook()
     local bags = _G.EUI_Bags
     local sortButton = bags and bags._sortBtn
-    if sortHookInstalled or not sortButton then return end
+    if not (sortButton and sortButton.GetScript and sortButton.SetScript) then return end
     local nativeClick = sortButton:GetScript("OnClick")
+    if sortButton == sortHookButton and nativeClick == sortHookHandler then return end
     if type(nativeClick) ~= "function" then return end
-    sortButton:SetScript("OnClick", function(self, ...)
-        if GetSettings().bagSlotFreezeEnabled ~= false and HasFrozenMainBagSlots() and IsMainBagsViewVisible() then
+    local handler = function(self, ...)
+        -- Native OneBag and MultiBag physical sorts both touch Main Bags,
+        -- regardless of which section is currently visible in the UI.
+        if GetSettings().bagSlotFreezeEnabled ~= false and HasFrozenMainBagSlots() then
             StartFrozenAwareSort()
         else
             nativeClick(self, ...)
         end
-    end)
-    sortHookInstalled = true
+    end
+    sortButton:SetScript("OnClick", handler)
+    sortHookButton, sortHookHandler = sortButton, handler
 end
 
 local function InstallVisualHooks()
@@ -800,6 +793,27 @@ function addon.BuildBagsPage(parent, yOffset)
         ); y = y - h
     end
     if addon.BuildRecentItemsBagsPage then y = addon.BuildRecentItemsBagsPage(parent, y) end
+
+    _, h = W:SectionHeader(parent, "BAG ASSISTANT", y); y = y - h
+    _, h = W:DualRow(parent, y,
+        {
+            type = "toggle",
+            text = "Show Bag Assistant",
+            tooltip = "Show the assistant button beside the bag controls.",
+            getValue = function() return GetSettings().bagAssistantEnabled ~= false end,
+            setValue = function(value)
+                GetSettings().bagAssistantEnabled = value and true or false
+                if addon.RefreshBagAssistant then addon.RefreshBagAssistant() end
+            end,
+        },
+        {
+            type = "toggle",
+            text = "Advance on Left-Click",
+            tooltip = "Each left-click attempts the next available bank action. Right-click always opens the full planner. Inventory moves run only from a click, not from events or timers.",
+            getValue = function() return GetSettings().bagAssistantAdvanceOnClick ~= false end,
+            setValue = function(value) GetSettings().bagAssistantAdvanceOnClick = value and true or false end,
+        }
+    ); y = y - h
     return math.abs(y)
 end
 
@@ -812,7 +826,8 @@ events:RegisterEvent("MODIFIER_STATE_CHANGED")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:SetScript("OnEvent", function(_, event, name)
     if event == "ADDON_LOADED" and name ~= "EllesmereUIBags" then return end
-    if event == "ADDON_LOADED" or event == "PLAYER_LOGIN" or event == "PLAYER_REGEN_ENABLED" then
+    if event == "ADDON_LOADED" or event == "PLAYER_LOGIN" or event == "PLAYER_REGEN_ENABLED"
+        or event == "BAG_UPDATE_DELAYED" then
         C_Timer.After(0, InstallSortHook)
         C_Timer.After(0, InstallVisualHooks)
     end
