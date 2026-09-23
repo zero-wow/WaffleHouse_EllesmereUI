@@ -208,6 +208,11 @@ local function fixture(options)
         return entry and ("|cff0070dd|Hitem:" .. entry.id .. "|h[" .. entry.name .. "]|h|r")
     end
     env.GetMoney = function() return 10000 end
+    state.achievements = options.achievements or {}
+    env.GetAchievementInfo = function(id)
+        local earned = state.achievements[id]
+        if earned ~= nil then return id, "Achievement " .. id, 0, earned end
+    end
     env.PlayerHasToy = function(itemID) return options.knownToyIDs and options.knownToyIDs[itemID] == true or false end
     env.GetCoinTextureString = function(value) return tostring(value) .. " copper" end
     env.GetItemInfo = function() return "Item", nil, 3, nil, nil, "Armor", "Plate" end
@@ -226,7 +231,8 @@ local function fixture(options)
     env.C_TooltipInfo = {GetMerchantItem = function(index)
         local entry = state.entries[index]
         if not entry or not entry.tooltip then return nil end
-        return {lines = {{leftText = entry.name}, {leftText = entry.tooltip}}}
+        return {lines = {{leftText = entry.name},
+            type(entry.tooltip) == "table" and entry.tooltip or {leftText = entry.tooltip}}}
     end}
     env.C_Item = {GetItemInfo = env.GetItemInfo, GetItemInfoInstant = function() return 101, nil, nil, nil, nil, 4, 4 end}
     env.EllesmereUI = {MakeBorder = function() return {SetColor = function() end} end}
@@ -841,6 +847,41 @@ test("renown filter leaves items visible when faction data is unavailable", func
     state:toolbar().hide:Fire("OnClick")
     state:toolbar().hideMenu.rows[2]:Fire("OnClick")
     check(state.buttons[1]:IsVisible(), "missing faction API must fail open")
+end)
+
+test("AFFORD hides only confirmed unmet achievement requirements", function()
+    for _, view in ipairs({"grid", "list"}) do
+        local state = fixture({view = view, achievements = {[1234] = false, [5678] = true}, entries = {
+            {id = 101, name = "Red requirement", price = 0,
+                tooltip = {leftText = "Requires Achievement: Treasure Hunter", leftColor = {r = 1, g = 0.1, b = 0.1}}},
+            {id = 102, name = "Completed requirement", price = 0,
+                tooltip = {leftText = "Requires Achievement: Treasure Hunter", leftColor = {r = 1, g = 1, b = 1}}},
+            {id = 103, name = "Linked unearned requirement", price = 0,
+                tooltip = "Requires Achievement: |Hachievement:1234|h[Treasure Hunter]|h"},
+            {id = 104, name = "Linked earned requirement", price = 0,
+                tooltip = "Requires Achievement: |Hachievement:5678|h[Explorer]|h"},
+            {id = 105, name = "Different requirement", price = 0,
+                tooltip = {leftText = "Requires Renown Rank 19", leftColor = {r = 1, g = 0, b = 0}}},
+            {id = 106, name = "Unverified achievement", price = 0,
+                tooltip = "Requires Achievement: Unknown"},
+            {id = 107, name = "Secret requirement", price = 0, tooltip = SECRET_NAME},
+        }})
+        state.env.C_CurrencyInfo.GetCurrencyInfo = function() return {quantity = 1000} end
+        state.addon.Refresh()
+        for _, button in ipairs(state.buttons) do check(button:IsVisible(), "AFFORD off must not hide achievement items") end
+        state:toolbar().afford:Fire("OnClick")
+        check(state.settings.legendAffordableOnly, "AFFORD control must enable filtering")
+        check(not state.buttons[1]:IsVisible(), "red achievement requirement must hide")
+        check(not state.buttons[3]:IsVisible(), "unearned linked achievement must hide")
+        for _, index in ipairs({2, 4, 5, 6, 7}) do
+            check(state.buttons[index]:IsVisible(), "earned, unrelated, or unverified requirement must remain visible")
+        end
+        state.achievements[1234] = true
+        state.addon.Refresh()
+        check(state.buttons[3]:IsVisible(), "earning the linked achievement must restore its vendor item")
+        state:toolbar().afford:Fire("OnClick")
+        for _, button in ipairs(state.buttons) do check(button:IsVisible(), "AFFORD off must restore all items") end
+    end
 end)
 
 test("HIDE menu combines Known and Renown without treating them as one filter", function()

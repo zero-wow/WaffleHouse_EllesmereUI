@@ -894,7 +894,7 @@ local function BuildOptionsConfig()
                 {
                     type = "toggle",
                     text = "Only Affordable Items",
-                    tooltip = "At a merchant, hide items you cannot currently afford with gold and listed currencies.",
+                    tooltip = "At a merchant, hide items you cannot currently afford with gold and listed currencies, or that require an achievement you have not earned.",
                     getValue = function()
                         return GetSettings().legendAffordableOnly == true
                     end,
@@ -3870,7 +3870,7 @@ local function EnsurePanel(frame)
         self._hovering = true
         self.label:SetTextColor(1, 1, 1, 1)
         if EllesmereUI and EllesmereUI.ShowWidgetTooltip then
-            EllesmereUI.ShowWidgetTooltip(self, "Hide vendor items you cannot currently afford. This checks gold and every listed currency cost.")
+            EllesmereUI.ShowWidgetTooltip(self, "Hide vendor items you cannot buy with your gold or currencies, or because a required achievement is unearned.")
         end
     end)
     panel.afford:SetScript("OnLeave", function(self)
@@ -4632,6 +4632,36 @@ function addon.IsVendorRenownLocked(merchantIndex, ranks, tooltip)
     return false
 end
 
+function addon.IsVendorAchievementLocked(merchantIndex, tooltip)
+    if not IsSafeNumber(merchantIndex) then return false end
+    if tooltip == nil then tooltip = addon.GetVendorMerchantTooltip(merchantIndex) end
+    if not IsSafeValue(tooltip) or type(tooltip) ~= "table"
+        or not IsSafeValue(tooltip.lines) or type(tooltip.lines) ~= "table" then return false end
+    for _, line in ipairs(tooltip.lines) do
+        if IsSafeValue(line) and type(line) == "table" and IsSafeText(line.leftText) then
+            local text = line.leftText:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+            if text:lower():match("^%s*requires%s+.-achievement[%s:]+") then
+                -- Merchant tooltips may expose an achievement link, or only a
+                -- red requirement line. Never hide on an unverified name alone.
+                local achievementID = tonumber(text:match("|Hachievement:(%d+)"))
+                if achievementID and GetAchievementInfo then
+                    local ok, id, _, _, completed = pcall(GetAchievementInfo, achievementID)
+                    if ok and IsSafeNumber(id) and IsSafeValue(completed) and completed == false then
+                        return true
+                    end
+                end
+                local color = line.leftColor
+                if IsSafeValue(color) and type(color) == "table"
+                    and IsSafeNumber(color.r) and IsSafeNumber(color.g) and IsSafeNumber(color.b)
+                    and color.r > 0.6 and color.g < 0.4 and color.b < 0.4 then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
 local function ApplyVendorFilters(button, costs, renownRanks)
     local settings = GetSettings()
     local currencyFiltering = settings.legendFilterItems == true and selectedCostKey ~= nil
@@ -4661,10 +4691,12 @@ local function ApplyVendorFilters(button, costs, renownRanks)
     end
 
     local matchesCurrency = not currencyFiltering or ButtonUsesCost(costs, selectedCostKey)
-    local affordable = not affordableFiltering or CanAffordMerchantItem(button._merchantIndex, costs)
+    local tooltip = (affordableFiltering or knownFiltering or renownFiltering)
+        and (addon.GetVendorMerchantTooltip(button._merchantIndex) or false) or false
+    local affordable = not affordableFiltering or (CanAffordMerchantItem(button._merchantIndex, costs)
+        and not addon.IsVendorAchievementLocked(button._merchantIndex, tooltip))
     local planner = GetVendorPlanner()
     local saved = not savedFiltering or planner[GetVendorPlannerKey(button)] ~= nil
-    local tooltip = (knownFiltering or renownFiltering) and (addon.GetVendorMerchantTooltip(button._merchantIndex) or false) or false
     local renownAvailable = not renownFiltering or not addon.IsVendorRenownLocked(button._merchantIndex, renownRanks, tooltip)
     local unknown = not knownFiltering or not addon.IsVendorItemKnown(button._merchantIndex, GetVendorItemID(button), tooltip)
     if button._waffleCurrencyFilterWasVisible and matchesCurrency and affordable and saved and renownAvailable and unknown then
@@ -6394,6 +6426,7 @@ events:RegisterEvent("HEIRLOOMS_UPDATED")
 events:RegisterEvent("HOUSE_DECOR_ADDED_TO_CHEST")
 events:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
 events:RegisterEvent("MAJOR_FACTION_RENOWN_LEVEL_CHANGED")
+events:RegisterEvent("ACHIEVEMENT_EARNED")
 events:RegisterEvent("MERCHANT_CLOSED")
 events:RegisterEvent("GOSSIP_SHOW")
 events:RegisterEvent("PLAYER_SOFT_INTERACT_CHANGED")
@@ -6484,7 +6517,8 @@ events:SetScript("OnEvent", function(_, event, addonName, success)
         -- The remaining events mostly serve Item Queue, companion, or skin
         -- features.  Never redraw Vendor Bags for those (notably bag sorting).
         if event == "MERCHANT_SHOW" or event == "MERCHANT_UPDATE" or event == "PLAYER_MONEY"
-            or event == "CURRENCY_DISPLAY_UPDATE" or event == "MAJOR_FACTION_RENOWN_LEVEL_CHANGED" then
+            or event == "CURRENCY_DISPLAY_UPDATE" or event == "MAJOR_FACTION_RENOWN_LEVEL_CHANGED"
+            or event == "ACHIEVEMENT_EARNED" then
             QueueRefresh()
         end
     end
