@@ -9,10 +9,12 @@ local REAGENT_CLASS = (Enum and Enum.ItemClass and Enum.ItemClass.Reagent) or 5
 local TRADEGOODS_CLASS = (Enum and Enum.ItemClass and Enum.ItemClass.Tradegoods) or 7
 local BAG_ICON_TEXTURE = "Interface\\AddOns\\WaffleHouse_EllesmereUI\\Media\\bag_assistant_emblem.tga"
 local ACTION_TILE_TEXTURE = "Interface\\AddOns\\WaffleHouse_EllesmereUI\\Media\\bag_assistant_actions.tga"
+local PLAY_ICON_TEXTURE = "Interface\\AddOns\\EllesmereUI\\media\\icons\\play.png"
 local ACTION_TILE_COORDS = {
     deposit = { 0.01, 0.49, 0.01, 0.49 },
     warband = { 0.01, 0.49, 0.01, 0.49 },
     categorize = { 0.51, 0.99, 0.01, 0.49 },
+    withdraw = { 0.51, 0.99, 0.01, 0.49 },
     guild_move = { 0.51, 0.99, 0.01, 0.49 },
     sort_bags = { 0.01, 0.49, 0.51, 0.99 },
     sort_character = { 0.01, 0.49, 0.51, 0.99 },
@@ -45,13 +47,22 @@ local sortedCharacterBankThisBankVisit
 local sortedWarbandBankThisBankVisit
 local pendingCategoryMove
 local pendingGuildMove
+local pendingOutdatedMove
 local pendingActionUntil
 local assistantRunState = "idle"
+local assistantRunMode = "all"
+local assistantRunSerial = 0
+local assistantAdvanceQueued
+local assistantActionCount = 0
+local assistantWaitCount = 0
+local MAX_ASSISTANT_ACTIONS = 150
+local MAX_ASSISTANT_WAITS = 40
 local lastActionMessage
 local lastActionTask
 local UpdateMenu
 local GetNextTask
 local AdvanceAssistant
+local QueueAdvance
 
 local function GetSettings()
     return addon.GetSettings and addon.GetSettings() or {}
@@ -625,10 +636,11 @@ local function ShowTooltip(owner)
     GameTooltip:SetText("Bag Assistant", 1, 1, 1)
     GameTooltip:AddLine(advice.text, 0.72, 0.72, 0.72, true)
     local _, nextLabel = GetNextTask and GetNextTask(true)
-    GameTooltip:AddLine(assistantRunState == "paused" and "Paused — right-click to resume."
-        or ("Left-click: " .. (nextLabel or "Check the next action")),
+    GameTooltip:AddLine(assistantRunState == "paused" and "Paused — left- or right-click to resume."
+        or (assistantRunState == "running" and "Running automatically — right-click to pause."
+            or "Left-click: run all available actions"),
         ACCENT_R, ACCENT_G, ACCENT_B, true)
-    if assistantRunState == "paused" then
+    if assistantRunState ~= "idle" then
         GameTooltip:AddLine("Next: " .. (nextLabel or "check the bank"), 0.72, 0.72, 0.72, true)
     end
     GameTooltip:AddLine(assistantRunState == "idle" and "Right-click: open the full planner."
@@ -688,8 +700,6 @@ local function Deposit(bankType)
     if not (C_Bank and C_Bank.AutoDepositItemsIntoBank and bankType) then
         return false, "Bank deposit is unavailable."
     end
-    -- This runs synchronously from the user's click; never queue or replay a
-    -- protected inventory action from an event/timer.
     C_Bank.AutoDepositItemsIntoBank(bankType)
     C_Timer.After(0, function()
         if addon.RefreshBagAssistant then addon.RefreshBagAssistant() end
@@ -759,7 +769,7 @@ GetNextTask = function(ignorePaused)
         if pendingGuildMove then
             local source = pendingGuildMove.source
             if GetGuildBankItemLink(source.tab, source.slot) == source.link
-                and not GetGuildBankItemLink(pendingGuildMove.target.index, pendingGuildMove.slot) then
+                or GetGuildBankItemLink(pendingGuildMove.target.index, pendingGuildMove.slot) ~= source.link then
                 return "wait", "Wait for the last Guild Bank transfer"
             end
             pendingGuildMove = nil
@@ -777,6 +787,23 @@ GetNextTask = function(ignorePaused)
     if advice.state == "loading" then return "wait", "Wait for bank tabs to load" end
 
     local plan = ScanBankPlan()
+    if pendingOutdatedMove then
+        local source = pendingOutdatedMove.source
+        local oldItem = C_Container.GetContainerItemInfo(source.bagID, source.slot)
+        local destItem = C_Container.GetContainerItemInfo(pendingOutdatedMove.bagID, pendingOutdatedMove.slot)
+        if (oldItem and oldItem.itemID == source.itemID)
+            or not (destItem and destItem.itemID == source.itemID) then
+            return "wait", "Wait for the last gear withdrawal"
+        end
+        pendingOutdatedMove = nil
+    end
+    if assistantRunMode == "withdraw" and assistantRunState ~= "idle" then
+        if #plan.outdated > 0 and C_Container and C_Container.PickupContainerItem
+            and CursorHasItem and not CursorHasItem() then
+            return "withdraw", "Withdraw outdated bank gear"
+        end
+        return "menu", "Outdated-gear withdrawal complete"
+    end
     if autoOrganizedThisBankVisit and CountAccessibleCleanups(plan) > 0 then
         if GetTime and autoOrganizedAt and GetTime() - autoOrganizedAt < 3 then
             return "wait", "Wait for bank tab settings to refresh"
@@ -806,7 +833,8 @@ GetNextTask = function(ignorePaused)
         local source = pendingCategoryMove.source
         local oldItem = C_Container.GetContainerItemInfo(source.bagID, source.slot)
         local destItem = C_Container.GetContainerItemInfo(pendingCategoryMove.bagID, pendingCategoryMove.slot)
-        if oldItem and oldItem.itemID == source.itemID and not destItem then
+        if (oldItem and oldItem.itemID == source.itemID)
+            or not (destItem and destItem.itemID == source.itemID) then
             return "wait", "Wait for the last bank transfer"
         end
         pendingCategoryMove = nil
@@ -814,6 +842,10 @@ GetNextTask = function(ignorePaused)
     if plan.move and C_Container and C_Container.PickupContainerItem and CursorHasItem
         and not CursorHasItem() then
         return "categorize", "Move " .. plan.move.source.category .. " to " .. plan.move.target.name
+    end
+    if #plan.outdated > 0 and C_Container and C_Container.PickupContainerItem
+        and CursorHasItem and not CursorHasItem() then
+        return "withdraw", "Withdraw outdated bank gear"
     end
     if not sortedBagsThisBankVisit and ((frozenBags and addon.SortUnfrozenBagSlots)
         or (C_Container and C_Container.SortBags)) then
@@ -881,7 +913,7 @@ local function MoveCategoryItem()
         return false, "Could not place the item. Check your cursor."
     end
     pendingCategoryMove = { source = source, bagID = target.bagID, slot = destSlot }
-    return true, "Moved one " .. source.category .. " item to " .. target.name .. ". Click again for the next item."
+    return true, "Moved " .. source.category .. " to " .. target.name .. "."
 end
 addon.MoveBagAssistantCategoryItem = MoveCategoryItem
 
@@ -903,7 +935,7 @@ local function WithdrawOutdatedGear(candidate)
     end
     if CursorHasItem() then return false, "Put down the item on your cursor first." end
     local current = C_Container.GetContainerItemInfo(candidate.bagID, candidate.slot)
-    if not (current and current.itemID == candidate.itemID) then
+    if not (current and current.itemID == candidate.itemID and not current.isLocked) then
         return false, "That bank slot changed; scan it again."
     end
     if candidate.link and current.hyperlink and current.hyperlink ~= candidate.link then
@@ -920,8 +952,7 @@ local function WithdrawOutdatedGear(candidate)
     local destBag, destSlot = FindFreeCarriedSlot()
     if not destBag then return false, "No free space in your bags." end
 
-    -- Both pickups happen synchronously inside the user's Withdraw click.
-    -- Never schedule or repeat a protected inventory action from a timer.
+    -- Revalidate each source and destination immediately before moving it.
     C_Container.PickupContainerItem(candidate.bagID, candidate.slot)
     if not CursorHasItem() then return false, "Could not pick up the bank item." end
     C_Container.PickupContainerItem(destBag, destSlot)
@@ -931,6 +962,7 @@ local function WithdrawOutdatedGear(candidate)
         end
         return false, "Could not place the item. Check your cursor."
     end
+    pendingOutdatedMove = { source = candidate, bagID = destBag, slot = destSlot }
     return true, "Moved " .. candidate.name .. " to your bags."
 end
 addon.WithdrawBagAssistantOutdatedGear = WithdrawOutdatedGear
@@ -949,7 +981,8 @@ UpdateMenu = function()
         SetMenuAction(assistantMenu.reagents, "Character-bank deposit — unavailable here", false)
         SetMenuAction(assistantMenu.warbound, "Warband deposit — unavailable here", false)
         SetMenuAction(assistantMenu.tidy, "Tidy & Categorize Guild Bank",
-            nextTask ~= "wait" and nextTask ~= "paused" and not IsInCombat(), AdvanceAssistant)
+            nextTask ~= "wait" and nextTask ~= "paused" and not IsInCombat(),
+            function() AdvanceAssistant(false, "all") end)
         for _, view in ipairs(BANK_VIEWS) do
             SetMenuAction(assistantMenu.viewButtons[view.index], view.label, false)
         end
@@ -1010,7 +1043,7 @@ UpdateMenu = function()
     SetMenuAction(assistantMenu.tidy,
         "Tidy & Categorize All",
         nextTask ~= "wait" and not IsInCombat(),
-        AdvanceAssistant)
+        function() AdvanceAssistant(false, "all") end)
 
     for _, view in ipairs(BANK_VIEWS) do
         local control = viewControls[view.index]
@@ -1080,14 +1113,15 @@ UpdateMenu = function()
             assistantMenu.gearIndex = assistantMenu.gearIndex % gearCount + 1
             UpdateMenu()
         end)
-    SetMenuAction(assistantMenu.withdrawGear, "Withdraw selected gear",
+    SetMenuAction(assistantMenu.withdrawGear,
+        gearCount > 0 and ("Withdraw all " .. gearCount .. " outdated gear") or "No outdated gear to withdraw",
         candidate ~= nil and not IsInCombat() and CursorHasItem and C_Container
             and C_Container.PickupContainerItem and true or false,
         function()
-            local _, message = WithdrawOutdatedGear(candidate)
+            AdvanceAssistant(false, "withdraw")
             assistantMenu.gearIndex = 1
             UpdateMenu()
-            SetMenuNotice(message)
+            SetMenuNotice(lastActionMessage)
         end)
     assistantMenu.withdrawGear._tooltipLink = candidate and candidate.link
     assistantMenu.withdrawGear._tooltipTabName = candidate and candidate.tabName
@@ -1191,7 +1225,7 @@ local function UpdateButton()
     assistantButton.icon:SetVertexColor(1, 1, 1, 1)
     local task = GetNextTask and GetNextTask(true)
     if task == "wait" then
-        task = (pendingActionUntil or pendingCategoryMove or pendingGuildMove
+        task = (pendingActionUntil or pendingCategoryMove or pendingGuildMove or pendingOutdatedMove
             or (addon.IsFrozenBagSortActive and addon.IsFrozenBagSortActive()))
             and lastActionTask or nil
     end
@@ -1209,12 +1243,11 @@ local function UpdateButton()
         end
     end
     local running = assistantRunState == "running"
-    local paused = assistantRunState == "paused"
-    assistantButton.stateBorder:SetShown(running or paused)
-    assistantButton.stateBackground:SetShown(running or paused)
+    assistantButton.stateBorder:Show()
+    assistantButton.stateBackground:Show()
     assistantButton.pauseLeft:SetShown(running)
     assistantButton.pauseRight:SetShown(running)
-    assistantButton.playGlyph:SetShown(paused)
+    assistantButton.playIcon:SetShown(not running)
     assistantButton.icon:SetAlpha(assistantButton._hovering and 1 or 0.9)
 end
 
@@ -1232,57 +1265,93 @@ local function ToggleMenu()
     menu:Show()
 end
 
-AdvanceAssistant = function()
-    if assistantRunState == "paused" or IsInCombat() then return end
-    assistantRunState = "running"
+QueueAdvance = function(delay)
+    if assistantRunState ~= "running" or assistantAdvanceQueued then return end
+    local serial = assistantRunSerial
+    assistantAdvanceQueued = true
+    C_Timer.After(delay or 0.8, function()
+        if serial ~= assistantRunSerial then return end
+        assistantAdvanceQueued = nil
+        if assistantRunState == "running" then AdvanceAssistant(true) end
+    end)
+end
+
+local function PauseAssistant(message)
+    assistantRunState = "paused"
+    assistantRunSerial = assistantRunSerial + 1
+    assistantAdvanceQueued = nil
+    lastActionMessage = message
+    UpdateButton()
+end
+
+AdvanceAssistant = function(fromQueue, requestedMode)
+    if IsInCombat() then
+        if assistantRunState == "running" then
+            lastActionMessage = "Paused by combat; the run will resume when combat ends."
+            UpdateButton()
+        end
+        return
+    end
+    if assistantRunState == "paused" then
+        if fromQueue then return end
+        if requestedMode then assistantRunMode = requestedMode end
+        assistantRunState = "running"
+        assistantActionCount = 0
+        assistantWaitCount = 0
+    elseif assistantRunState == "idle" then
+        assistantRunMode = requestedMode or "all"
+        assistantRunState = "running"
+        assistantActionCount = 0
+        assistantWaitCount = 0
+    elseif requestedMode then
+        assistantRunMode = requestedMode
+    end
     local task = GetNextTask()
-    local message
+    local message, succeeded
     if task == "organize" then
-        local submitted
-        submitted, message = ApplyTabCleanup()
-        if submitted then
+        succeeded, message = ApplyTabCleanup()
+        if succeeded then
             autoOrganizedThisBankVisit = true
             autoOrganizedAt = GetTime and GetTime() or nil
         end
     elseif task == "deposit" then
         local carried = CountCarriedMaterialStacks()
-        local deposited
-        deposited, message = Deposit(Enum.BankType.Character)
-        if deposited then attemptedDepositMaterialCount = carried end
+        succeeded, message = Deposit(Enum.BankType.Character)
+        if succeeded then attemptedDepositMaterialCount = carried end
     elseif task == "warband" then
-        local deposited
-        deposited, message = Deposit(Enum.BankType.Account)
-        if deposited then attemptedWarbandDepositThisBankVisit = true end
+        succeeded, message = Deposit(Enum.BankType.Account)
+        if succeeded then attemptedWarbandDepositThisBankVisit = true end
     elseif task == "categorize" then
-        local moved
-        moved, message = MoveCategoryItem()
+        succeeded, message = MoveCategoryItem()
+    elseif task == "withdraw" then
+        succeeded, message = WithdrawOutdatedGear(ScanBankPlan().outdated[1])
     elseif task == "guild_organize" then
-        local changed
-        changed, message = ApplyGuildTabCleanup()
+        succeeded, message = ApplyGuildTabCleanup()
     elseif task == "guild_move" then
-        local moved
-        moved, message = MoveGuildCategoryItem()
+        succeeded, message = MoveGuildCategoryItem()
     elseif task == "sort_bags" then
-        local sorted
-        sorted, message = TidyMainBags()
-        if sorted then sortedBagsThisBankVisit = true end
+        succeeded, message = TidyMainBags()
+        if succeeded then sortedBagsThisBankVisit = true end
     elseif task == "sort_character" then
-        local sorted
-        sorted, message = SortBank(Enum.BankType.Character)
-        if sorted then sortedCharacterBankThisBankVisit = true end
+        succeeded, message = SortBank(Enum.BankType.Character)
+        if succeeded then sortedCharacterBankThisBankVisit = true end
     elseif task == "sort_warband" then
-        local sorted
-        sorted, message = SortBank(Enum.BankType.Account)
-        if sorted then sortedWarbandBankThisBankVisit = true end
+        succeeded, message = SortBank(Enum.BankType.Account)
+        if succeeded then sortedWarbandBankThisBankVisit = true end
     elseif task == "visit" then
-        message = "Visit a banker, then click Bag Assistant again to continue."
+        message = "Visit a banker; Bag Assistant will continue when the bank opens."
     elseif task == "wait" then
-        message = "The next step is not ready yet. Try again when the bank has loaded or combat ends."
+        message = "Waiting for the bank or last transfer to finish."
     else
-        message = "No automatic step remains. Choose a specific action from the planner."
+        message = "Automatic run complete. Choose a specific action from the planner if needed."
     end
 
-    if task == "menu" then assistantRunState = "idle" end
+    if task == "menu" then
+        assistantRunState = "idle"
+        assistantRunMode = "all"
+        assistantRunSerial = assistantRunSerial + 1
+        assistantAdvanceQueued = nil
+    end
     if ACTION_TILE_COORDS[task] then lastActionTask = task end
     lastActionMessage = message
     HideTooltip()
@@ -1290,11 +1359,24 @@ AdvanceAssistant = function()
         UpdateMenu()
         SetMenuNotice(message)
     end
-    if task == "organize" or task == "deposit" or task == "warband"
-        or task == "categorize"
-        or task == "sort_bags" or task == "sort_character" or task == "sort_warband"
-        or task == "guild_organize" or task == "guild_move" then
+    if succeeded then
+        assistantActionCount = assistantActionCount + 1
+        assistantWaitCount = 0
         pendingActionUntil = GetTime and (GetTime() + 0.8) or nil
+        if assistantActionCount >= MAX_ASSISTANT_ACTIONS then
+            PauseAssistant("Stopped after 150 actions; review the bank before resuming.")
+        else
+            QueueAdvance(0.85)
+        end
+    elseif task == "wait" and not IsInCombat() then
+        assistantWaitCount = assistantWaitCount + 1
+        if assistantWaitCount >= MAX_ASSISTANT_WAITS then
+            PauseAssistant("The bank did not confirm the last action; review it before resuming.")
+        elseif IsBankOpen() or IsGuildBankOpen() then
+            QueueAdvance(0.3)
+        end
+    elseif task ~= "visit" and task ~= "menu" then
+        PauseAssistant(message or "The action could not finish; review the bank before resuming.")
     end
     UpdateButton()
 end
@@ -1325,24 +1407,25 @@ local function CreateAssistantButton()
     button.actionAccent:SetSize(1, 10)
     button.stateBorder = button:CreateTexture(nil, "OVERLAY")
     button.stateBorder:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
-    button.stateBorder:SetSize(9, 9)
+    button.stateBorder:SetSize(11, 11)
     button.stateBorder:SetColorTexture(0.72, 0.48, 0.19, 1)
     button.stateBackground = button:CreateTexture(nil, "OVERLAY")
     button.stateBackground:SetPoint("CENTER", button.stateBorder, "CENTER")
-    button.stateBackground:SetSize(7, 7)
+    button.stateBackground:SetSize(9, 9)
     button.stateBackground:SetColorTexture(0.035, 0.035, 0.035, 1)
     button.pauseLeft = button:CreateTexture(nil, "OVERLAY")
-    button.pauseLeft:SetPoint("CENTER", button.stateBorder, "CENTER", -1.25, 0)
-    button.pauseLeft:SetSize(1.5, 5)
+    button.pauseLeft:SetPoint("CENTER", button.stateBorder, "CENTER", -1.75, 0)
+    button.pauseLeft:SetSize(2, 6)
     button.pauseLeft:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 1)
     button.pauseRight = button:CreateTexture(nil, "OVERLAY")
-    button.pauseRight:SetPoint("CENTER", button.stateBorder, "CENTER", 1.25, 0)
-    button.pauseRight:SetSize(1.5, 5)
+    button.pauseRight:SetPoint("CENTER", button.stateBorder, "CENTER", 1.75, 0)
+    button.pauseRight:SetSize(2, 6)
     button.pauseRight:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 1)
-    button.playGlyph = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    button.playGlyph:SetPoint("CENTER", button.stateBorder, "CENTER", 0, 0)
-    button.playGlyph:SetText(">")
-    button.playGlyph:SetTextColor(ACCENT_R, ACCENT_G, ACCENT_B)
+    button.playIcon = button:CreateTexture(nil, "OVERLAY")
+    button.playIcon:SetPoint("CENTER", button.stateBorder, "CENTER", 0.5, 0)
+    button.playIcon:SetSize(8, 8)
+    button.playIcon:SetTexture(PLAY_ICON_TEXTURE)
+    button.playIcon:SetVertexColor(ACCENT_R, ACCENT_G, ACCENT_B, 1)
     button:SetScript("OnEnter", function(self)
         self._hovering = true
         self.icon:SetAlpha(1)
@@ -1359,10 +1442,16 @@ local function CreateAssistantButton()
             if IsShiftKeyDown and IsShiftKeyDown() or assistantRunState == "idle" then
                 ToggleMenu()
             else
-                assistantRunState = assistantRunState == "running" and "paused" or "running"
-                lastActionMessage = assistantRunState == "paused"
-                    and "Paused; no new actions will start." or "Ready for the next left-click."
-                UpdateButton()
+                if assistantRunState == "running" then
+                    PauseAssistant("Paused; no new actions will start.")
+                else
+                    assistantRunState = "running"
+                    assistantActionCount = 0
+                    assistantWaitCount = 0
+                    lastActionMessage = "Resuming automatic run."
+                    UpdateButton()
+                    QueueAdvance(0.1)
+                end
             end
         elseif mouseButton == "LeftButton" then
             AdvanceAssistant()
@@ -1389,6 +1478,7 @@ local function QueueRefresh()
     C_Timer.After(0, function()
         refreshPending = nil
         addon.RefreshBagAssistant()
+        if assistantRunState == "running" then QueueAdvance(0.2) end
     end)
 end
 
@@ -1396,6 +1486,8 @@ local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
+events:RegisterEvent("ADDON_ACTION_BLOCKED")
+events:RegisterEvent("ADDON_ACTION_FORBIDDEN")
 events:RegisterEvent("BANKFRAME_OPENED")
 events:RegisterEvent("BANKFRAME_CLOSED")
 events:RegisterEvent("BANK_TABS_CHANGED")
@@ -1407,6 +1499,12 @@ for _, eventName in ipairs({ "GUILDBANKFRAME_OPENED", "GUILDBANKFRAME_CLOSED",
     pcall(events.RegisterEvent, events, eventName)
 end
 events:SetScript("OnEvent", function(_, event, name)
+    if event == "ADDON_ACTION_BLOCKED" or event == "ADDON_ACTION_FORBIDDEN" then
+        if assistantRunState == "running" and name == addonName then
+            PauseAssistant("WoW blocked an automatic action. Run stopped to prevent repeated errors.")
+        end
+        return
+    end
     if event == "ADDON_LOADED" and name ~= "EllesmereUIBags" then return end
     if event == "BANKFRAME_OPENED" or event == "BANKFRAME_CLOSED" then
         autoOrganizedThisBankVisit = nil
@@ -1417,6 +1515,7 @@ events:SetScript("OnEvent", function(_, event, name)
         sortedCharacterBankThisBankVisit = nil
         sortedWarbandBankThisBankVisit = nil
         pendingCategoryMove = nil
+        pendingOutdatedMove = nil
         pendingActionUntil = nil
     end
     if event == "GUILDBANKFRAME_CLOSED" then

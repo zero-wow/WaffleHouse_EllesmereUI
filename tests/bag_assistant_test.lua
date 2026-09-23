@@ -164,6 +164,8 @@ assert(advice.state == "ready" and advice.tab and advice.tab.name == "Overflow" 
     "assistant must prefer an available destination over an already-full material tab")
 assert(events.BANKFRAME_OPENED and events.PLAYERBANKSLOTS_CHANGED,
     "assistant must refresh advice as bank data changes")
+assert(events.ADDON_ACTION_BLOCKED and events.ADDON_ACTION_FORBIDDEN,
+    "automatic runs must stop if WoW rejects an addon action")
 
 EUI_BankFrame._allTabs[#EUI_BankFrame._allTabs + 1] =
     { bagID = 102, name = "Tab 3", numSlots = 6, icon = 123, depositFlags = 4 }
@@ -225,23 +227,42 @@ EUI_Bags = { Header = CreateFrame("Frame"), _bagsBtn = CreateFrame("Button"),
     _sortBtn = { Click = function() end } }
 for _, callback in ipairs(delayedLoginCallbacks) do callback() end
 C_Timer.After = immediateTimer
+local now, scheduled = 0, {}
+GetTime = function() return now end
+C_Timer.After = function(delay, callback)
+    if delay <= 0 then callback()
+    else scheduled[#scheduled + 1] = { due = now + delay, callback = callback } end
+end
+local function RunTimers(limit)
+    for _ = 1, limit or 100 do
+        if #scheduled == 0 then return end
+        table.sort(scheduled, function(a, b) return a.due < b.due end)
+        local nextTimer = table.remove(scheduled, 1)
+        now = nextTimer.due
+        nextTimer.callback()
+    end
+    assert(#scheduled == 0, "assistant timer queue did not settle")
+end
 local assistantButton = EUI_Bags.Header.children[1]
 assert(assistantButton and assistantButton.scripts.OnClick, "assistant header button must be created")
 assert(assistantButton.icon.texture:find("bag_assistant_emblem.tga", 1, true)
     and assistantButton.actionTile.width == 14 and assistantButton.actionTile.height == 14
-    and assistantButton.stateBorder.width == 9,
+    and assistantButton.stateBorder.width == 11
+    and assistantButton.playIcon.texture:find("EllesmereUI\\media\\icons\\play.png", 1, true),
     "action and status badges must fit the skinned 24px assistant icon")
 assistantButton:Click("LeftButton")
 local menu = WaffleHouseBagAssistantMenu
 assert(not menu and #updates == 2,
     "left-click must do the next action without opening the full planner")
-assert(assistantButton.pauseLeft:IsShown() and not assistantButton.playGlyph:IsShown(),
+assert(assistantButton.pauseLeft:IsShown() and not assistantButton.playIcon:IsShown(),
     "active sequence must display pause bars without replacing the bronze icon")
 assistantButton:Click("RightButton")
 assert(not WaffleHouseBagAssistantMenu and #updates == 2,
     "right-click during an active run must pause without opening the planner")
-assert(not assistantButton.pauseLeft:IsShown() and assistantButton.playGlyph:IsShown(),
+assert(not assistantButton.pauseLeft:IsShown() and assistantButton.playIcon:IsShown(),
     "paused sequence must display a play/resume mark")
+RunTimers()
+assert(#updates == 2, "pausing must cancel the queued automatic step")
 local shiftDown = true
 IsShiftKeyDown = function() return shiftDown end
 assistantButton:Click("RightButton")
@@ -251,8 +272,9 @@ assert(menu and menu:IsShown() and menu.width == 390 and menu.height == 480,
 shiftDown = false
 assistantButton:Click("LeftButton")
 assert(#updates == 2, "left-click while paused must not queue another action")
-assistantButton:Click("RightButton")
-assert(#updates == 2, "resuming must not immediately queue another action")
+RunTimers()
+assert(#updates == 2 and assistantButton.playIcon:IsShown(),
+    "resumed run must settle without repeating unconfirmed tab edits")
 assert(#updates == 2,
     "first assistant click must auto-apply qualifying bank-tab settings")
 assert(menu.viewButtons[-3]._enabled and menu.organize._enabled and menu.withdrawGear._enabled,
@@ -342,6 +364,11 @@ C_Bank.FetchPurchasedBankTabData = function(bankType)
 end
 containers[102][6] = { itemID = 9001 }
 containers[104][5] = false
+containers[0][3], containers[0][4] = false, false
+containers[103] = {
+    { itemID = 7001, hyperlink = "item:7001", iconFileID = 999 },
+    { itemID = 7001, hyperlink = "item:7001", iconFileID = 999 },
+}
 C_Bank.IsItemAllowedInBankType = function() return false end
 local bagSorts, bankSorts = 0, {}
 C_Container.SortBags = function() bagSorts = bagSorts + 1 end
@@ -349,20 +376,47 @@ C_Container.SortBank = function(bankType) bankSorts[#bankSorts + 1] = bankType e
 bankEventFrame.scripts.OnEvent(nil, "BANKFRAME_OPENED")
 assert(addon.GetBagAssistantNextTask() == "deposit", "sequence must start with reagent deposit")
 assistantButton:Click("LeftButton")
-assert(deposits == 1 and addon.GetBagAssistantNextTask() == "warband",
-    "after reagents, the next click must offer a Warbound deposit")
-assistantButton:Click("LeftButton")
-assert(deposits == 2 and addon.GetBagAssistantNextTask() == "sort_bags",
-    "after both deposit types, the next click must advance to physical bag sorting")
-assistantButton:Click("LeftButton")
-assert(bagSorts == 1 and addon.GetBagAssistantNextTask() == "sort_character",
-    "bag sort must run once before character-bank sorting")
-assistantButton:Click("LeftButton")
-assert(bankSorts[1] == Enum.BankType.Character and addon.GetBagAssistantNextTask() == "sort_warband",
-    "character bank must sort before Warband bank")
-assistantButton:Click("LeftButton")
-assert(bankSorts[2] == Enum.BankType.Account and addon.GetBagAssistantNextTask() == "menu",
-    "assistant must finish the click sequence after sorting the Warband bank")
+assert(deposits == 1 and assistantButton.pauseLeft:IsShown(),
+    "one click must start an automatic run with a visible pause mark")
+bankEventFrame.scripts.OnEvent(nil, "ADDON_ACTION_BLOCKED", "WaffleHouse_EllesmereUI")
+RunTimers()
+assert(deposits == 1 and assistantButton.playIcon:IsShown(),
+    "a blocked addon action must cancel further automatic work")
+assistantButton:Click("RightButton")
+RunTimers()
+assert(deposits == 2 and bagSorts == 1 and bankSorts[1] == Enum.BankType.Character
+    and bankSorts[2] == Enum.BankType.Account,
+    "one click must advance through both deposits and all available physical sorts")
+assert(not containers[103][1] and not containers[103][2]
+    and containers[0][3] and containers[0][4] and not cursor,
+    "the active run must withdraw every flagged bank gear item without another click")
+assert(addon.GetBagAssistantNextTask() == "menu" and assistantButton.playIcon:IsShown(),
+    "finished run must return to ready state with a visible play mark")
+
+-- The planner's withdrawal action is a focused automatic run. Pausing after
+-- the first transfer must cancel the queued second move, and resuming must
+-- finish the withdrawals without starting unrelated sorting work.
+containers[0][5], containers[0][6] = false, false
+containers[103] = {
+    { itemID = 7001, hyperlink = "item:7001", iconFileID = 999 },
+    { itemID = 7001, hyperlink = "item:7001", iconFileID = 999 },
+}
+bankEventFrame.scripts.OnEvent(nil, "BANKFRAME_OPENED")
+assert(menu.withdrawGear._enabled and menu.withdrawGear.label.text:find("Withdraw all 2", 1, true),
+    "planner must offer one-click withdrawal of every flagged gear item")
+local sortsBeforeFocusedRun = bagSorts
+menu.withdrawGear:Click("LeftButton")
+assert(not containers[103][1] and containers[103][2] and assistantButton.pauseLeft:IsShown(),
+    "focused withdrawal must start with one safe transfer")
+assistantButton:Click("RightButton")
+RunTimers()
+assert(containers[103][2] and assistantButton.playIcon:IsShown(),
+    "pause must stop a queued gear withdrawal")
+assistantButton:Click("RightButton")
+RunTimers()
+assert(not containers[103][2] and containers[0][5] and containers[0][6]
+    and bagSorts == sortsBeforeFocusedRun,
+    "resume must finish only the requested withdrawals")
 
 -- A carried item can be categorized on demand, but both the initial scan and
 -- the final pickup must honor a newly frozen slot.
