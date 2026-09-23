@@ -3644,6 +3644,29 @@ local function EnsurePanel(frame)
         end
     end)
 
+    -- Keep the native-view switch in the same toolbar slot as GRID/TEXT so
+    -- narrow layouts wrap the two controls together instead of clipping it.
+    panel.nativeView = CreateFrame("Button", nil, panel.mode)
+    panel.nativeView:SetSize(18, 18)
+    panel.nativeView:SetPoint("RIGHT", panel.mode, "RIGHT", -2, 0)
+    panel.nativeView.dot = panel.nativeView:CreateTexture(nil, "ARTWORK")
+    panel.nativeView.dot:SetSize(6, 6)
+    panel.nativeView.dot:SetPoint("CENTER")
+    panel.nativeView.dot:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+    panel.nativeView:SetScript("OnEnter", function(self)
+        self.dot:SetColorTexture(1, 1, 1, 1)
+        if EllesmereUI and EllesmereUI.ShowWidgetTooltip then
+            EllesmereUI.ShowWidgetTooltip(self, "Show Blizzard's merchant item frame and its original prices. EllesmereUI's skin remains active.")
+        end
+    end)
+    panel.nativeView:SetScript("OnLeave", function(self)
+        self.dot:SetColorTexture(ACCENT_R, ACCENT_G, ACCENT_B, 1)
+        if EllesmereUI and EllesmereUI.HideWidgetTooltip then EllesmereUI.HideWidgetTooltip() end
+    end)
+    panel.nativeView:SetScript("OnClick", function()
+        if addon.SetVendorNativeView then addon.SetVendorNativeView(true) end
+    end)
+
     panel.filter = CreateFrame("Button", nil, panel)
     panel.filter:SetSize(62, TITLE_H)
     panel.filter:SetPoint("RIGHT", panel.mode, "LEFT", -3, 0)
@@ -3926,7 +3949,7 @@ function addon.LayoutVendorToolbar(legend, panelWidth)
             local labelWidth = math.ceil((label.GetUnboundedStringWidth and label:GetUnboundedStringWidth()) or label:GetStringWidth() or 0)
             -- Both control styles reserve 22 pixels: a 12px leading mark,
             -- a 4-5px text gap, and visible gutters at each edge.
-            widths[index] = math.max(41, labelWidth + 22)
+            widths[index] = math.max(41, labelWidth + 22) + (control == legend.mode and 20 or 0)
             controlsWidth = controlsWidth + widths[index]
             if index > 1 then controlsWidth = controlsWidth + controlGap end
         end
@@ -3978,7 +4001,7 @@ function addon.LayoutVendorToolbar(legend, panelWidth)
             else
                 control.label:SetPoint("LEFT", control, "LEFT", 3, 0)
             end
-            control.label:SetPoint("RIGHT", control, "RIGHT", -3, 0)
+            control.label:SetPoint("RIGHT", control, "RIGHT", control == legend.mode and -23 or -3, 0)
             control.label:SetJustifyH("LEFT")
             x = x + width + controlGap
         end
@@ -6092,6 +6115,7 @@ events:SetScript("OnEvent", function(_, event, addonName, success)
             QueueRefresh()
         end
     elseif event == "MERCHANT_CLOSED" then
+        if addon.ResetVendorNativeView then addon.ResetVendorNativeView() end
         selectedCostKey = nil
         if panel then panel:Hide() end
     else
