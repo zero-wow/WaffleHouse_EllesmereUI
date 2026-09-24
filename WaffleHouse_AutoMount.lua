@@ -29,7 +29,7 @@ local function PickLiteMountID()
 end
 
 local function CanAutoMount()
-    if InCombatLockdown() or UnitAffectingCombat("player") or IsDeadOrGhost() then return false end
+    if InCombatLockdown() or UnitAffectingCombat("player") or UnitIsDeadOrGhost("player") then return false end
     if IsMounted() or IsFlying() or UnitOnTaxi("player") or UnitInVehicle("player") then return false end
     if not IsOutdoors() or GetUnitSpeed("player") > 0 then return false end
     if UnitCastingInfo("player") or UnitChannelInfo("player") then return false end

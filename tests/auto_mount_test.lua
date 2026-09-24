@@ -16,7 +16,10 @@ C_Timer = { After = function(_, callback) timers[#timers + 1] = callback end }
 C_MountJournal = { SummonByID = function(id) summons[#summons + 1] = id end }
 InCombatLockdown = function() return state.combat end
 UnitAffectingCombat = function() return state.combat end
-IsDeadOrGhost = function() return state.dead end
+UnitIsDeadOrGhost = function(unit)
+    assert(unit == "player")
+    return state.dead
+end
 IsMounted = function() return state.mounted end
 IsFlying = function() return state.flying end
 UnitOnTaxi = function() return state.taxi end
