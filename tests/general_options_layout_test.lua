@@ -18,6 +18,12 @@ assert(general:find('W:SectionHeader(parent, "DATABARS & COMPANIONS"', 1, true),
     "Wonderbar and companion controls need one owning EUI section")
 assert(general:find('W:SectionHeader(parent, "SKINNING"', 1, true),
     "Zygor pointer styling needs its own Skinning section")
+local resourceHeader = assert(general:find('W:SectionHeader(parent, "RESOURCE WATCH"', 1, true))
+local protectorOptions = assert(general:find('addon.BuildNameplateCVarOptions(parent, y)', 1, true),
+    "nameplate CVar controls must be included on General")
+local skinningHeader = assert(general:find('W:SectionHeader(parent, "SKINNING"', 1, true))
+assert(resourceHeader < protectorOptions and protectorOptions < skinningHeader,
+    "nameplate CVar controls must sit between Resource Watch and Skinning")
 assert(general:find('OptionsSectionIntro', 1, true) == nil,
     "General must not use floating centered context labels above its section headers")
 
