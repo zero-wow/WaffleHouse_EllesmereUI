@@ -12,6 +12,7 @@ WaffleHouse_EllesmereUI.lua
 WaffleHouse_VendorOptions.lua
 WaffleHouse_VendorStack.lua
 WaffleHouse_AutoMount.lua
+WaffleHouse_ResourceWatch.lua
 WaffleHouse_Adventure.lua
 WaffleHouse_SoireeRules.lua
 WaffleHouse_Soiree.lua

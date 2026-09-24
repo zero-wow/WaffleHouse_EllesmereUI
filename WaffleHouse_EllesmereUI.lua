@@ -161,6 +161,12 @@ local function GetSettings()
     if WaffleHouseDB.autoMountProvider ~= "litemount" and WaffleHouseDB.autoMountProvider ~= "wow" then
         WaffleHouseDB.autoMountProvider = "auto"
     end
+    if WaffleHouseDB.resourceWatchEnabled == nil then
+        WaffleHouseDB.resourceWatchEnabled = false
+    end
+    if WaffleHouseDB.resourceWatchThreshold ~= "5" and WaffleHouseDB.resourceWatchThreshold ~= "12" then
+        WaffleHouseDB.resourceWatchThreshold = "8"
+    end
     if WaffleHouseDB.autoEquipBestDelveCurios == nil then
         WaffleHouseDB.autoEquipBestDelveCurios = false
     end
@@ -821,7 +827,7 @@ local function BuildOptionsConfig()
     return {
         title = "Waffle House",
         description = "|cff7f7f7fEnhancing your |r|cff18d19eEllesmereUI|r|cff7f7f7f with |r|cff6fe4cbQuality of Life|r|cff7f7f7f Goodness...|r",
-        searchTerms = "vendor bag merchant currency cost legend shopping list easy access item view list rows frozen slot freeze modifier lock sort main bags frosted marker recent items new item highlight acquired items interact key ignored vendor npc ethereal soul trader tool rack chooser choice celestial carver energy splinter arcanic precision empyrean zapper primary stat haste mastery critical strike companion pet summon wonderbar databar data bar drag reorder entries item queue zygor automation auto skip quest gossip dialogue campaign cinematic repair sell junk modifier reverse mode buff check raid party missing assignment beacon earth shield fortitude intellect skyfury bronze buff frame anchor collapse expand own cast timer rules adventure ritual ritual sites delve delves dungeon dungeons raid raids trusty delve companion valeera sanguinar curio curios combat utility bilespear dreamcatcher mute voice dialogue sound auto mount after combat litemount random favorite",
+        searchTerms = "vendor bag merchant currency cost legend shopping list easy access item view list rows frozen slot freeze modifier lock sort main bags frosted marker recent items new item highlight acquired items interact key ignored vendor npc ethereal soul trader tool rack chooser choice celestial carver energy splinter arcanic precision empyrean zapper primary stat haste mastery critical strike companion pet summon wonderbar databar data bar drag reorder entries item queue zygor automation auto skip quest gossip dialogue campaign cinematic repair sell junk modifier reverse mode buff check raid party missing assignment beacon earth shield fortitude intellect skyfury bronze buff frame anchor collapse expand own cast timer rules adventure ritual ritual sites delve delves dungeon dungeons raid raids trusty delve companion valeera sanguinar curio curios combat utility bilespear dreamcatcher mute voice dialogue sound auto mount after combat litemount random favorite resource protection resource watch addon cpu performance warning slow addon",
         pages = { "General", "Adventure", "Automation", "Bags", "Item Queue", "Vendor" },
         buildPage = function(pageName, parent, yOffset)
             if pageName == "Adventure" then
@@ -1082,6 +1088,46 @@ local function BuildOptionsConfig()
                     setValue = function(value)
                         GetSettings().keepSoulTraderSummoned = value and true or false
                         if value and UpdateSoulTraderCompanion then UpdateSoulTraderCompanion() end
+                    end,
+                }
+            ); y = y - h
+
+            _, h = W:SectionHeader(parent, "RESOURCE WATCH", y); y = y - h
+            _, h = W:DualRow(parent, y,
+                {
+                    type = "toggle",
+                    text = "Warn About High Addon CPU",
+                    tooltip = "Check Retail's built-in addon CPU profiler every 5 seconds. Warn only after an addon stays above your selected threshold for four consecutive checks. No scriptProfile setting or reload is required. Warnings pause until combat ends, never disable an addon, and appear once per addon per session. Shared libraries can make attribution imperfect.",
+                    disabled = function()
+                        return not (C_AddOnProfiler and C_AddOnProfiler.IsEnabled and C_AddOnProfiler.IsEnabled()
+                            and C_AddOnProfiler.GetTopKAddOnsForMetric and Enum and Enum.AddOnProfilerMetric
+                            and Enum.AddOnProfilerMetric.RecentAverageTime)
+                    end,
+                    disabledTooltip = "This WoW client does not expose the built-in addon CPU profiler.",
+                    getValue = function()
+                        return GetSettings().resourceWatchEnabled == true
+                    end,
+                    setValue = function(value)
+                        GetSettings().resourceWatchEnabled = value and true or false
+                        if addon.RefreshResourceWatch then addon.RefreshResourceWatch() end
+                    end,
+                },
+                {
+                    type = "dropdown",
+                    text = "CPU Warning Threshold",
+                    values = { ["5"] = "5 ms / frame", ["8"] = "8 ms / frame", ["12"] = "12 ms / frame" },
+                    order = { "5", "8", "12" },
+                    tooltip = "Average addon CPU time over the most recent 60 profiler ticks. 8 ms per frame is a deliberately high default; choose 5 ms for earlier warnings or 12 ms for only extreme cases. The value must persist across four 5-second checks.",
+                    getValue = function()
+                        return GetSettings().resourceWatchThreshold
+                    end,
+                    setValue = function(value)
+                        if value == "5" or value == "12" then
+                            GetSettings().resourceWatchThreshold = value
+                        else
+                            GetSettings().resourceWatchThreshold = "8"
+                        end
+                        if addon.ResetResourceWatchSamples then addon.ResetResourceWatchSamples() end
                     end,
                 }
             ); y = y - h
