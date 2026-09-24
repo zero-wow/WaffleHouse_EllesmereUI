@@ -117,6 +117,8 @@ function frameMethods:SetPoint(...) self.point = { ... } end
 function frameMethods:ClearAllPoints() self.point = nil end
 function frameMethods:SetAllPoints() end
 function frameMethods:SetFrameStrata() end
+function frameMethods:GetFrameLevel() return self.frameLevel or 1 end
+function frameMethods:SetFrameLevel(level) self.frameLevel = level end
 function frameMethods:SetClampedToScreen() end
 function frameMethods:EnableMouse(value) self.mouseEnabled = value end
 function frameMethods:SetBackdrop() end
@@ -140,7 +142,10 @@ function frameMethods:Show()
 end
 function frameMethods:Hide() self.shown = false end
 function frameMethods:SetShown(value) if value then self:Show() else self:Hide() end end
-function frameMethods:CreateTexture() return setmetatable({ scripts = {}, shown = true }, { __index = frameMethods }) end
+function frameMethods:CreateTexture(_, layer, _, subLevel)
+    return setmetatable({ scripts = {}, shown = true, parent = self,
+        layer = layer, subLevel = subLevel }, { __index = frameMethods })
+end
 function frameMethods:CreateFontString() return setmetatable({ scripts = {}, shown = true }, { __index = frameMethods }) end
 function frameMethods:Click(button) if self.scripts.OnClick then self.scripts.OnClick(self, button) end end
 function frameMethods:GetChildren() return table.unpack(self.children or {}) end
@@ -248,8 +253,13 @@ assert(assistantButton and assistantButton.scripts.OnClick, "assistant header bu
 assert(assistantButton.icon.texture:find("bag_assistant_emblem.tga", 1, true)
     and assistantButton.actionTile.width == 14 and assistantButton.actionTile.height == 14
     and assistantButton.stateBorder.width == 11
+    and assistantButton.statusBadge.parent == assistantButton
+    and assistantButton.statusBadge.frameLevel > assistantButton:GetFrameLevel()
+    and assistantButton.stateBorder.layer == "BACKGROUND"
+    and assistantButton.stateBackground.layer == "ARTWORK"
+    and assistantButton.playIcon.layer == "OVERLAY"
     and assistantButton.playIcon.texture:find("EllesmereUI\\media\\icons\\play.png", 1, true),
-    "action and status badges must fit the skinned 24px assistant icon")
+    "action badge and layered play/pause badge must fit the skinned 24px assistant icon")
 assistantButton:Click("LeftButton")
 local menu = WaffleHouseBagAssistantMenu
 assert(not menu and #updates == 2,
