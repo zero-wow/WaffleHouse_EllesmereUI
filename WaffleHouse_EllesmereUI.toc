@@ -4,13 +4,14 @@
 ## Author: Zero
 ## Version: 0.1.0-dev.1
 ## Dependencies: EllesmereUI, EllesmereUIVendorBag
-## OptionalDeps: EllesmereUIBlizzardSkin, ZygorGuidesViewer, EllesmereUIDataBars, EllesmereUIBags
+## OptionalDeps: EllesmereUIBlizzardSkin, ZygorGuidesViewer, EllesmereUIDataBars, EllesmereUIBags, LiteMount
 ## SavedVariables: WaffleHouseDB, EllesmereUI_WaffleHouseDB, EllesmereUI_QoLDB
 ## IconTexture: Interface\AddOns\WaffleHouse_EllesmereUI\Media\icon.png
 
 WaffleHouse_EllesmereUI.lua
 WaffleHouse_VendorOptions.lua
 WaffleHouse_VendorStack.lua
+WaffleHouse_AutoMount.lua
 WaffleHouse_Adventure.lua
 WaffleHouse_SoireeRules.lua
 WaffleHouse_Soiree.lua

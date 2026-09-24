@@ -429,6 +429,42 @@ function addon.BuildAdventurePage(parent, yOffset)
     -- owns its native EUI header and the height of its controls.
     if addon.BuildSoireeOptions then y = addon.BuildSoireeOptions(parent, y) end
 
+    _, h = W:SectionHeader(parent, "MOUNTING", y); y = y - h
+    _, h = W:DualRow(parent, y,
+        {
+            type = "toggle",
+            text = "Auto Mount After Combat",
+            tooltip = "Once after you leave combat, try to summon a mount if you are outdoors, alive, stationary, and not already mounted or casting. This is off by default. Mounting can still fail where the game forbids it.",
+            getValue = function()
+                return GetSettings().autoMountAfterCombat == true
+            end,
+            setValue = function(value)
+                GetSettings().autoMountAfterCombat = value == true
+            end,
+        },
+        {
+            type = "dropdown",
+            text = "Mount Picker",
+            values = {
+                auto = "Auto: LiteMount / WoW",
+                litemount = "LiteMount Random",
+                wow = "WoW Random Favorite",
+            },
+            order = { "auto", "litemount", "wow" },
+            tooltip = "Auto uses LiteMount's enabled, castable journal-mount pool and its random weighting when LiteMount is loaded; otherwise it uses WoW's random favorite. LiteMount Random also falls back to WoW if LiteMount is unavailable. LiteMount's custom action rules, shapeshift spells, and item mounts cannot run automatically here.",
+            getValue = function()
+                return GetSettings().autoMountProvider
+            end,
+            setValue = function(value)
+                if value == "litemount" or value == "wow" then
+                    GetSettings().autoMountProvider = value
+                else
+                    GetSettings().autoMountProvider = "auto"
+                end
+            end,
+        }
+    ); y = y - h
+
     _, h = W:SectionHeader(parent, "DELVE COMPANION", y); y = y - h
     _, h = W:DualRow(parent, y,
         {
