@@ -2,7 +2,7 @@ local addonName, addon = ...
 if not addon then return end
 
 -- EllesmereUI Bags owns recent-item detection. This module only paints a
--- separate, non-interactive highlight on the already-created inventory slots.
+-- separate, non-interactive Blizzard-style glow on existing inventory slots.
 local HIGHLIGHT_SECONDS = 30
 local visuals = setmetatable({}, { __mode = "k" })
 local hookedFrames = setmetatable({}, { __mode = "k" })
@@ -41,27 +41,28 @@ local function GetOrCreateVisual(button)
     -- The item button uses a secure template; never create its regions or
     -- attach a script while combat-locked. Repaint after combat instead.
     if InCombatLockdown and InCombatLockdown() then return nil end
-    visual = { edges = {} }
-    local function Edge()
-        local texture = button:CreateTexture(nil, "OVERLAY", nil, 7)
-        texture:SetColorTexture(0.05, 0.82, 0.62, 0.95)
-        texture:Hide()
-        visual.edges[#visual.edges + 1] = texture
-        return texture
-    end
-    local top, bottom, left, right = Edge(), Edge(), Edge(), Edge()
-    top:SetHeight(2)
-    top:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
-    top:SetPoint("TOPRIGHT", button, "TOPRIGHT", -2, -2)
-    bottom:SetHeight(2)
-    bottom:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 2, 2)
-    bottom:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
-    left:SetWidth(2)
-    left:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
-    left:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 2, 2)
-    right:SetWidth(2)
-    right:SetPoint("TOPRIGHT", button, "TOPRIGHT", -2, -2)
-    right:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -2, 2)
+    -- EllesmereUI suppresses the template's NewItemTexture and animation.
+    -- Own this visual instead of changing Blizzard template sub-objects, and
+    -- keep it below the host's text and Waffle's frozen-item marker.
+    local glow = button:CreateTexture(nil, "OVERLAY", nil, 3)
+    glow:SetAllPoints(button)
+    glow:SetAtlas("bags-glow-white")
+    glow:SetBlendMode("ADD")
+    glow:SetVertexColor(0.05, 0.82, 0.62, 1)
+    glow:Hide()
+    local pulse = glow:CreateAnimationGroup()
+    pulse:SetLooping("REPEAT")
+    local fadeOut = pulse:CreateAnimation("Alpha")
+    fadeOut:SetOrder(1)
+    fadeOut:SetDuration(0.5)
+    fadeOut:SetFromAlpha(1)
+    fadeOut:SetToAlpha(0.2)
+    local fadeIn = pulse:CreateAnimation("Alpha")
+    fadeIn:SetOrder(2)
+    fadeIn:SetDuration(0.5)
+    fadeIn:SetFromAlpha(0.2)
+    fadeIn:SetToAlpha(1)
+    visual = { glow = glow, pulse = pulse }
     button:HookScript("OnEnter", function(self)
         if GetClearMode() ~= "hover" then return end
         local itemID = GetButtonItemID(self)
@@ -76,7 +77,16 @@ local function GetOrCreateVisual(button)
 end
 
 local function SetVisual(visual, visible)
-    for _, edge in ipairs(visual.edges) do edge:SetShown(visible == true) end
+    if visible then
+        visual.glow:Show()
+        if not visual.pulse:IsPlaying() then
+            visual.glow:SetAlpha(1)
+            visual.pulse:Play()
+        end
+    else
+        if visual.pulse:IsPlaying() then visual.pulse:Stop() end
+        visual.glow:Hide()
+    end
 end
 
 local function EnumerateButtons(container, touched, recent, mode)
@@ -141,7 +151,7 @@ function addon.BuildRecentItemsBagsPage(parent, y)
         {
             type = "toggle",
             text = "Highlight Recent Items",
-            tooltip = "Outline items tracked by EllesmereUI Bags' Recent Items list. The outline is visual only and never changes the bag item or its click behavior.",
+            tooltip = "Pulse Blizzard's new-item glow over items tracked by EllesmereUI Bags' Recent Items list. This visual effect never changes the bag item or its click behavior.",
             getValue = function() return GetSettings().bagRecentHighlightEnabled ~= false end,
             setValue = function(value)
                 GetSettings().bagRecentHighlightEnabled = value and true or false
@@ -153,7 +163,7 @@ function addon.BuildRecentItemsBagsPage(parent, y)
             text = "Clear Highlight",
             values = { hover = "On Hover", timer = "After 30 Seconds", close = "When Bags Close" },
             order = { "hover", "timer", "close" },
-            tooltip = "Choose when the outline disappears. This does not clear EllesmereUI Bags' Recent Items list. The timer starts when the item is first shown in your bags.",
+            tooltip = "Choose when the glow disappears. This does not clear EllesmereUI Bags' Recent Items list. The timer starts when the item is first shown in your bags.",
             getValue = GetClearMode,
             setValue = function(value)
                 GetSettings().bagRecentHighlightClearMode = value

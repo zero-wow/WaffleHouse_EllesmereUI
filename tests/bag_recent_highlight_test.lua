@@ -18,11 +18,37 @@ function Object:IsVisible() return self.shown end
 function Object:Show() self.shown = true end
 function Object:Hide() self.shown = false; self:Fire("OnHide") end
 function Object:SetShown(value) self.shown = value end
-function Object:CreateTexture()
+function Object:CreateTexture(_, layer, _, subLevel)
     self.textures = (self.textures or 0) + 1
-    return newObject()
+    local texture = newObject()
+    texture.layer, texture.subLevel = layer, subLevel
+    return texture
 end
-function Object:SetColorTexture() end
+function Object:SetAtlas(atlas) self.atlas = atlas end
+function Object:SetBlendMode(mode) self.blendMode = mode end
+function Object:SetVertexColor(...) self.vertexColor = { ... } end
+function Object:SetAlpha(alpha) self.alpha = alpha end
+function Object:SetAllPoints(parent) self.allPoints = parent end
+function Object:CreateAnimationGroup()
+    local group = newObject()
+    self.animationGroup = group
+    return group
+end
+function Object:SetLooping(looping) self.looping = looping end
+function Object:CreateAnimation(kind)
+    local animation = newObject()
+    animation.kind = kind
+    self.animations = self.animations or {}
+    self.animations[#self.animations + 1] = animation
+    return animation
+end
+function Object:SetOrder(order) self.order = order end
+function Object:SetDuration(duration) self.duration = duration end
+function Object:SetFromAlpha(alpha) self.fromAlpha = alpha end
+function Object:SetToAlpha(alpha) self.toAlpha = alpha end
+function Object:IsPlaying() return self.playing == true end
+function Object:Play() self.playing = true; self.playCount = (self.playCount or 0) + 1 end
+function Object:Stop() self.playing = false; self.stopCount = (self.stopCount or 0) + 1 end
 function Object:SetPoint() end
 function Object:SetHeight() end
 function Object:SetWidth() end
@@ -90,18 +116,7 @@ local function flush(delay)
         else timers[#timers + 1] = timer end
     end
 end
-local function outlined()
-    local visual = button.textures
-    return visual and visual >= 4
-end
-local function visibleEdges()
-    local count = 0
-    -- The four highlight textures were created before any pooled reuse.
-    for _, visual in ipairs(button._testTextures or {}) do
-        if visual.shown then count = count + 1 end
-    end
-    return count
-end
+local function glow() return button._testTextures and button._testTextures[1] end
 local originalCreateTexture = button.CreateTexture
 button.CreateTexture = function(self, ...)
     local texture = originalCreateTexture(self, ...)
@@ -113,34 +128,48 @@ end
 events:Fire("OnEvent", "ADDON_LOADED", "EllesmereUIBags")
 flush(0)
 bags:RefreshInventory()
-assert(outlined() and visibleEdges() == 4, "recent item must receive four visible inset edges")
+local recentGlow = glow()
+assert(button.textures == 1 and recentGlow and recentGlow.shown
+    and recentGlow.atlas == "bags-glow-white" and recentGlow.blendMode == "ADD"
+    and recentGlow.layer == "OVERLAY" and recentGlow.subLevel == 3
+    and recentGlow.allPoints == button and recentGlow.animationGroup:IsPlaying()
+    and recentGlow.animationGroup.looping == "REPEAT"
+    and #recentGlow.animationGroup.animations == 2,
+    "recent item must receive Blizzard's pulsing glow over the full icon, not inset edges")
 button:Fire("OnEnter")
-assert(visibleEdges() == 0 and bags._recentItems[101], "hover clears only Waffle's outline")
+assert(not recentGlow.shown and not recentGlow.animationGroup:IsPlaying()
+    and bags._recentItems[101], "hover clears only Waffle's glow")
 
 contents[0][1] = { itemID = 102 }
 bags._recentItems[101] = nil
 bags._recentItems[102] = true
 bags:RefreshInventory()
-assert(visibleEdges() == 4, "reused item button must highlight the newly acquired item")
+assert(recentGlow.shown and recentGlow.animationGroup:IsPlaying()
+    and recentGlow.animationGroup.playCount == 2,
+    "reused item button must restart the glow for a newly acquired item")
 settings.bagRecentHighlightEnabled = false
 addon.RefreshRecentItemHighlights()
-assert(visibleEdges() == 0, "disabling the feature must remove stale pooled outlines")
+assert(not recentGlow.shown and not recentGlow.animationGroup:IsPlaying(),
+    "disabling the feature must remove stale pooled glows")
 
 settings.bagRecentHighlightEnabled = true
 settings.bagRecentHighlightClearMode = "close"
 addon.ResetRecentItemHighlights()
-assert(visibleEdges() == 4, "close mode should show the outline while bags are open")
+assert(recentGlow.shown, "close mode should show the glow while bags are open")
 bags:Hide()
-assert(visibleEdges() == 0, "closing bags must clear outlines in close mode")
+assert(not recentGlow.shown and not recentGlow.animationGroup:IsPlaying(),
+    "closing bags must clear the glow in close mode")
 bags:Show()
 bags:RefreshInventory()
-assert(visibleEdges() == 0, "a cleared item must stay clear when bags reopen")
+assert(not recentGlow.shown, "a cleared item must stay clear when bags reopen")
 
 settings.bagRecentHighlightClearMode = "timer"
 addon.ResetRecentItemHighlights()
-assert(visibleEdges() == 4, "timer mode should initially highlight")
+assert(recentGlow.shown and recentGlow.animationGroup:IsPlaying(),
+    "timer mode should initially pulse")
 flush(30)
-assert(visibleEdges() == 0, "timer expiry should clear the outline")
+assert(not recentGlow.shown and not recentGlow.animationGroup:IsPlaying(),
+    "timer expiry should stop the glow")
 
 local newParent = newObject(bags._scrollChild)
 newParent.id = 0
@@ -154,10 +183,12 @@ assert(not newButton.textures, "secure item regions must not be created during c
 inCombat = false
 events:Fire("OnEvent", "PLAYER_REGEN_ENABLED")
 flush(0)
-assert(newButton.textures == 4, "combat-end refresh should create the deferred outline")
+assert(newButton.textures == 1, "combat-end refresh should create the deferred glow")
 
 local endY = addon.BuildRecentItemsBagsPage(newObject(), -100)
 assert(endY == -145, "recent-items controls must reserve their settings-page height")
 assert(addon._options[1].getValue() == true and addon._options[2].getValue() == "timer",
     "the Bags settings controls must expose highlight and clear mode")
+assert(addon._options[1].tooltip:find("glow", 1, true),
+    "the settings description must match the animated glow")
 print("Recent bag-item highlight regressions passed")
