@@ -64,7 +64,7 @@ for _, name in ipairs(names) do
 end
 
 addon.BuildNameplateCVarOptions({}, 0)
-assert(controls["NAMEPLATE CVAR PROTECTOR"] and controls["Apply Protected Values Now"])
+assert(controls["NAMEPLATE CVAR PROTECTOR"] and controls["Apply All Targets Now"])
 assert(controls["Protect Selected Nameplate CVars"].type == "toggle")
 for _, label in ipairs({ "Friendly NPCs", "Friendly Guardians", "Friendly Minions", "Friendly Pets" }) do
     assert(controls[label .. " Target"].type == "dropdown")
@@ -132,5 +132,29 @@ values[names[1]] = "1"
 frame:OnEvent("CVAR_UPDATE", names[1])
 runTimers()
 assert(values[names[1]] == "1", "turning off the master must stop restoration")
+
+-- The explicit button applies targets once even when no rows are protected.
+for _, name in ipairs(names) do values[name] = "1" end
+local count = #writes
+controls["Apply All Targets Now"].onClick()
+assert(#writes == count + 4, "manual apply must write all four targets")
+for _, name in ipairs(names) do assert(values[name] == "0") end
+assert(notices[#notices]:find("4 applied", 1, true), "manual apply must confirm its result")
+
+for _, name in ipairs(names) do values[name] = "1" end
+combat = true
+count = #writes
+local queued = addon.ApplyNameplateCVarTargetsNow()
+assert(queued.queued == 4 and #writes == count, "manual writes must defer in combat")
+combat = false
+frame:OnEvent("PLAYER_REGEN_ENABLED")
+for _, name in ipairs(names) do assert(values[name] == "0") end
+
+values[names[1]] = "1"
+SetCVar = function() return false end
+local failed = addon.ApplyNameplateCVarTargetsNow()
+assert(failed.failed == 1 and failed.already == 3,
+    "a refused game API write must be reported, not claimed as applied")
+assert(notices[#notices]:find("1 failed", 1, true))
 
 io.write("nameplate CVar protector tests passed\n")

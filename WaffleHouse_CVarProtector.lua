@@ -78,32 +78,42 @@ end
 
 local function ApplyOne(name, manual)
     local entry = byLowerName[type(name) == "string" and name:lower() or ""]
-    if not entry then return end
+    if not entry then return "failed" end
     name = entry.name
     local settings = GetSettings()
-    if not settings or not IsProtected(settings, name) then return end
+    if not settings then return "failed" end
+    if not manual and not IsProtected(settings, name) then return "skipped" end
     if InCombatLockdown and InCombatLockdown() then
         pending[name] = true
         if manual then pendingManual[name] = true end
-        return
+        return "queued"
     end
-    if not (C_CVar and C_CVar.GetCVar) then return end
+    if not (C_CVar and C_CVar.GetCVar) then
+        ReportOnce(name, "cannot be restored because this client has no CVar getter.", writeWarned)
+        return "failed"
+    end
     local writeCVar = type(SetCVar) == "function" and SetCVar or C_CVar.SetCVar
     if type(writeCVar) ~= "function" then
         ReportOnce(name, "cannot be restored because this client has no CVar setter.", writeWarned)
-        return
+        return "failed"
     end
     local desired = settings.nameplateCVarTargets[name]
     local current = C_CVar.GetCVar(name)
-    if current == nil or current == desired then return end
-    if not CanAttempt(name, manual) then return end
+    if current == nil then
+        ReportOnce(name, "is not available as a CVar on this client.", writeWarned)
+        return "failed"
+    end
+    if current == desired then return "already" end
+    if not CanAttempt(name, manual) then return "paused" end
 
     -- Prefer FrameXML's SetCVar wrapper for secure CVars outside combat;
     -- the direct API is a fallback for clients without that wrapper.
     local ok, result = pcall(writeCVar, name, desired)
     if not ok or result == false or C_CVar.GetCVar(name) ~= desired then
         ReportOnce(name, "could not be restored by this client; check the in-game Nameplates settings.", writeWarned)
+        return "failed"
     end
+    return "applied"
 end
 
 function addon.RefreshNameplateCVarProtection(name)
@@ -112,6 +122,20 @@ function addon.RefreshNameplateCVarProtection(name)
         return
     end
     for _, entry in ipairs(CVARS) do ApplyOne(entry.name, false) end
+end
+
+function addon.ApplyNameplateCVarTargetsNow()
+    local counts = { applied = 0, already = 0, queued = 0, failed = 0, paused = 0 }
+    for _, entry in ipairs(CVARS) do
+        local result = ApplyOne(entry.name, true)
+        if counts[result] ~= nil then counts[result] = counts[result] + 1 end
+    end
+    if DEFAULT_CHAT_FRAME and DEFAULT_CHAT_FRAME.AddMessage then
+        DEFAULT_CHAT_FRAME:AddMessage(string.format(
+            "|cff6fe4cbWaffle House CVar Protector:|r %d applied, %d already correct, %d queued until combat ends, %d failed. Checked Protect rows stay enforced while the master switch is on.",
+            counts.applied, counts.already, counts.queued, counts.failed + counts.paused))
+    end
+    return counts
 end
 
 function addon.SetNameplateCVarTarget(name, value)
@@ -152,9 +176,9 @@ function addon.BuildNameplateCVarOptions(parent, y)
         },
         {
             type = "button",
-            text = "Apply Protected Values Now",
-            tooltip = "Apply the target value of each individually protected nameplate CVar. This does not affect unprotected entries. If you are in combat, secure CVar writes wait until combat ends.",
-            onClick = function() addon.RefreshNameplateCVarProtection() end,
+            text = "Apply All Targets Now",
+            tooltip = "Set all four nameplate CVars to their chosen target values once, even if their Protect switches are off. Only checked Protect rows stay enforced afterward. Writes requested during combat wait until combat ends; the result appears in chat.",
+            onClick = function() addon.ApplyNameplateCVarTargetsNow() end,
         }
     ); y = y - h
 
@@ -166,7 +190,7 @@ function addon.BuildNameplateCVarOptions(parent, y)
                 text = entry.label .. " Target",
                 values = { ["0"] = "Off (0)", ["1"] = "On (1)" },
                 order = { "0", "1" },
-                tooltip = name .. "\n" .. entry.description .. " A target only changes your game setting when this entry and the master protector are enabled.",
+                tooltip = name .. "\n" .. entry.description .. " Choosing a target changes the game setting immediately only when both this Protect switch and the master protector are enabled. Use Apply All Targets Now for a one-time change to every row.",
                 getValue = function() return GetSettings().nameplateCVarTargets[name] end,
                 setValue = function(value) addon.SetNameplateCVarTarget(name, value) end,
             },
