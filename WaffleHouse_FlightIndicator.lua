@@ -1,20 +1,66 @@
 local addonName, addon = ...
 
 local STEADY_FLIGHT_AURA = 404468
-local TRANSITION = {}
-for index = 1, 16 do
-    TRANSITION[index] = "Interface\\AddOns\\" .. addonName
-        .. "\\Media\\FlightStyle\\flight-" .. string.format("%02d", index) .. ".png"
+local ART_ROOT = "Interface\\AddOns\\" .. addonName .. "\\Media\\FlightStyle\\"
+local ICONS = { skyriding = ART_ROOT .. "flight-01.png", steady = ART_ROOT .. "flight-16.png" }
+local BACKGROUNDS = {
+    skyriding = { ART_ROOT .. "empty-skyriding.png", ART_ROOT .. "swirl-skyriding.png",
+        ART_ROOT .. "swirl-steady.png", ART_ROOT .. "empty-steady.png" },
+    steady = { ART_ROOT .. "empty-steady.png", ART_ROOT .. "swirl-steady.png",
+        ART_ROOT .. "swirl-skyriding.png", ART_ROOT .. "empty-skyriding.png" },
+}
+local BASE_CREATURE = {}
+for index = 1, 6 do
+    BASE_CREATURE[#BASE_CREATURE + 1] = "creature-" .. string.format("%02d", index) .. ".png"
 end
-local ICONS = { skyriding = TRANSITION[1], steady = TRANSITION[16] }
-local WIND_TEXTURE = "Interface\\AddOns\\" .. addonName .. "\\Media\\FlightStyle\\wind.png"
-local VEIL_TEXTURE = "Interface\\AddOns\\" .. addonName .. "\\Media\\FlightStyle\\veil.png"
+for index = 1, 4 do
+    BASE_CREATURE[#BASE_CREATURE + 1] = "turn-" .. string.format("%02d", index) .. ".png"
+end
+for index = 7, 20 do
+    BASE_CREATURE[#BASE_CREATURE + 1] = "creature-" .. string.format("%02d", index) .. ".png"
+end
+-- Put the additional drawings where the silhouette changes most. The reverse
+-- flight-style cast walks this same 48-stage sequence backwards.
+local BETWEEN_CREATURE = {
+    [1] = { "morph-g01-50.png" }, [2] = { "morph-g02-50.png" },
+    [3] = { "morph-g03-50.png" }, [4] = { "morph-g04-50.png" },
+    [5] = { "morph-g05-50.png" },
+    [6] = { "morph-g06-33.png", "morph-g06-67.png" },
+    [7] = { "morph-g07-33.png", "morph-g07-67.png" },
+    [8] = { "morph-g08-33.png", "morph-g08-67.png" },
+    [9] = { "morph-g09-50.png", "morph-g09-67.png" },
+    [10] = { "morph-g10-33.png", "morph-g10-67.png" },
+    [11] = { "morph-g11-50.png" }, [12] = { "morph-g12-50.png" },
+    [13] = { "morph-g13-50.png" }, [14] = { "morph-g14-50.png" },
+    [15] = { "morph-g15-50.png" }, [16] = { "morph-g16-50.png" },
+    [17] = { "morph-g17-50.png" }, [18] = { "morph-g18-50.png" },
+    [19] = { "morph-g19-50.png" },
+}
+local CREATURE = {}
+for index, name in ipairs(BASE_CREATURE) do
+    CREATURE[#CREATURE + 1] = ART_ROOT .. name
+    for _, inbetween in ipairs(BETWEEN_CREATURE[index] or {}) do
+        CREATURE[#CREATURE + 1] = ART_ROOT .. inbetween
+    end
+end
+local RIM_TEXTURE = ART_ROOT .. "rim.png"
+local WIND_TEXTURE = ART_ROOT .. "wind.png"
+local VEIL_TEXTURE = ART_ROOT .. "veil.png"
 local SWITCH_SPELLS = { [436854] = true, [460002] = true, [460003] = true }
 local SIZES = { small = 76, medium = 104, large = 132 }
 local DEFAULT_X, DEFAULT_Y = 0, 180
 
 local badge
 local animation
+
+local function Clamp01(value)
+    return math.max(0, math.min(1, value))
+end
+
+local function SmoothStep(value)
+    value = Clamp01(value)
+    return value * value * (3 - 2 * value)
+end
 
 -- LiteMount uses this same Steady Flight aura to distinguish the two styles.
 -- In Midnight, aura data can become secret during combat; keep the last
@@ -73,6 +119,31 @@ local function CreateBadge()
     badge.veil:SetTexture(VEIL_TEXTURE)
     badge.veil:SetAlpha(0)
 
+    badge.creatureA = badge:CreateTexture(nil, "OVERLAY")
+    badge.creatureA:SetPoint("CENTER", badge, "CENTER")
+    badge.creatureA:SetAlpha(0)
+    badge.creatureB = badge:CreateTexture(nil, "OVERLAY")
+    badge.creatureB:SetPoint("CENTER", badge, "CENTER")
+    badge.creatureB:SetAlpha(0)
+
+    badge.rim = badge:CreateTexture(nil, "OVERLAY")
+    badge.rim:SetAllPoints()
+    badge.rim:SetTexture(RIM_TEXTURE)
+    badge.rim:SetAlpha(0)
+    badge.original = badge:CreateTexture(nil, "OVERLAY")
+    badge.original:SetAllPoints()
+    badge.original:SetAlpha(0)
+
+    -- Load the small sprite set before the first cast so its first reveal does
+    -- not hitch while the game opens individual image files.
+    badge.preloadedArt = {}
+    for _, path in ipairs(CREATURE) do
+        local texture = badge:CreateTexture(nil, "BACKGROUND")
+        texture:SetTexture(path)
+        texture:SetAlpha(0)
+        badge.preloadedArt[#badge.preloadedArt + 1] = texture
+    end
+
     badge:SetScript("OnDragStart", function(self)
         if IsShiftKeyDown() then self:StartMoving() end
     end)
@@ -98,10 +169,12 @@ local function ShowStaticStyle(style)
     badge.icon:SetTexture(ICONS[style])
     badge.iconPath = ICONS[style]
     badge.blend:SetAlpha(0)
-    badge.icon:SetRotation(0)
-    badge.blend:SetRotation(0)
     badge.wind:SetAlpha(0)
     badge.veil:SetAlpha(0)
+    badge.creatureA:SetAlpha(0)
+    badge.creatureB:SetAlpha(0)
+    badge.rim:SetAlpha(0)
+    badge.original:SetAlpha(0)
     badge.style = style
     badge:Show()
 end
@@ -121,50 +194,108 @@ end
 
 local function RenderTransition()
     if not (badge and animation) then return end
-    local progress = math.max(0, math.min(1,
-        (GetTime() - animation.startTime) / animation.duration))
-    -- Hold the recognisable starting form while wind builds, then sweep
-    -- through the pose change under the bright vortex near the cast's end.
-    -- The same authored art is played backwards for the opposite switch.
-    local framePos
-    if progress < 0.68 then
-        framePos = 4 * progress / 0.68
-    elseif progress < 0.95 then
-        framePos = 4 + 10 * (progress - 0.68) / 0.27
+    local progress = Clamp01(
+        (GetTime() - animation.startTime) / animation.duration)
+    local backgrounds = BACKGROUNDS[animation.from]
+    local backgroundPosition
+    if progress < 0.18 then
+        backgroundPosition = progress / 0.18
+    elseif progress < 0.50 then
+        backgroundPosition = 1
+    elseif progress < 0.72 then
+        backgroundPosition = 1 + (progress - 0.50) / 0.22
+    elseif progress < 0.84 then
+        backgroundPosition = 2
     else
-        framePos = 14 + (progress - 0.95) / 0.05
+        backgroundPosition = 2 + (progress - 0.84) / 0.16
     end
-    local index = math.min(#TRANSITION - 1, math.floor(framePos) + 1)
-    local fraction = framePos - (index - 1)
-    local startIndex = animation.from == "skyriding" and index or (#TRANSITION + 1 - index)
-    local endIndex = animation.from == "skyriding" and (index + 1) or (#TRANSITION - index)
-    if badge.iconPath ~= TRANSITION[startIndex] then
-        badge.icon:SetTexture(TRANSITION[startIndex])
-        badge.iconPath = TRANSITION[startIndex]
+    local backgroundIndex = math.min(3, math.floor(backgroundPosition) + 1)
+    local backgroundMix = backgroundPosition - (backgroundIndex - 1)
+    if badge.iconPath ~= backgrounds[backgroundIndex] then
+        badge.icon:SetTexture(backgrounds[backgroundIndex])
+        badge.iconPath = backgrounds[backgroundIndex]
     end
-    if badge.blendPath ~= TRANSITION[endIndex] then
-        badge.blend:SetTexture(TRANSITION[endIndex])
-        badge.blendPath = TRANSITION[endIndex]
+    if badge.blendPath ~= backgrounds[backgroundIndex + 1] then
+        badge.blend:SetTexture(backgrounds[backgroundIndex + 1])
+        badge.blendPath = backgrounds[backgroundIndex + 1]
     end
-    badge.blend:SetAlpha(fraction)
+    badge.blend:SetAlpha(backgroundMix)
 
     local direction = animation.from == "skyriding" and 1 or -1
-    local spin = math.max(0, math.min(1, (progress - 0.58) / 0.28))
-    spin = spin * spin * (3 - 2 * spin)
-    local angle = direction * 2 * math.pi * spin
-    badge.icon:SetRotation(angle)
-    badge.blend:SetRotation(angle)
+    local energy = SmoothStep((progress - 0.08) / 0.18)
+        * SmoothStep((0.98 - progress) / 0.17)
+    badge.wind:SetRotation(direction * 3 * math.pi * progress)
+    badge.wind:SetAlpha(energy * (0.37 + 0.09 * math.sin(18 * math.pi * progress)))
+    badge.veil:SetRotation(-direction * 2 * math.pi * progress)
+    badge.veil:SetAlpha(energy * (0.19 + 0.08 * math.sin(27 * math.pi * progress) ^ 2))
 
-    badge.wind:SetRotation(direction * 10 * math.pi * progress)
-    badge.wind:SetAlpha(math.max(0, math.sin(math.pi * progress)) * 0.78)
-    local veilAlpha = 0
-    if progress >= 0.52 and progress < 0.70 then
-        veilAlpha = 0.96 * (progress - 0.52) / 0.18
-    elseif progress >= 0.70 and progress < 0.86 then
-        veilAlpha = 0.96 * (0.86 - progress) / 0.16
+    -- The subject is separate from the gem: it flies out, leaves the center
+    -- empty during the clockwork vortex, then returns as a 48-pose morph.
+    local creaturePosition, creatureAlpha, creatureScale, offsetX, offsetY
+    if progress < 0.20 then
+        local leaving = SmoothStep(progress / 0.20)
+        creaturePosition = animation.from == "skyriding" and (1 + 4 * leaving)
+            or (#CREATURE - 4 * leaving)
+        creatureAlpha = 1 - SmoothStep((progress - 0.13) / 0.07)
+        creatureScale = 1 - 0.52 * leaving
+        offsetX = (animation.from == "skyriding" and 0.68 or 0.05) * leaving
+        offsetY = (animation.from == "skyriding" and -0.36 or 0.55) * leaving
+    elseif progress >= 0.66 then
+        -- A linear walk gives all 48 poses roughly equal screen time during
+        -- the final 1.7 seconds; only the flight path and scale ease in.
+        local arriving = Clamp01((progress - 0.66) / 0.34)
+        local arrivalEase = SmoothStep(arriving)
+        creaturePosition = animation.from == "skyriding"
+            and (5 + (#CREATURE - 5) * arriving)
+            or (#CREATURE - 4 - (#CREATURE - 5) * arriving)
+        creatureAlpha = SmoothStep((progress - 0.66) / 0.08)
+        creatureScale = 0.32 + 0.68 * arrivalEase
+        offsetX = (animation.from == "steady" and -0.24 or 0) * (1 - arrivalEase)
+        offsetY = (animation.from == "steady" and 0.22 or -0.12) * (1 - arrivalEase)
+    else
+        creatureAlpha = 0
     end
-    badge.veil:SetRotation(-direction * 4 * math.pi * progress)
-    badge.veil:SetAlpha(veilAlpha)
+
+    local originalAlpha = 0
+    if progress < 0.06 then
+        originalAlpha = 1 - SmoothStep(progress / 0.06)
+    elseif progress > 0.92 then
+        originalAlpha = SmoothStep((progress - 0.92) / 0.08)
+        creatureAlpha = creatureAlpha * (1 - originalAlpha)
+    end
+    local originalPath = progress < 0.5 and ICONS[animation.from] or ICONS[animation.to]
+    if badge.originalPath ~= originalPath then
+        badge.original:SetTexture(originalPath)
+        badge.originalPath = originalPath
+    end
+    badge.original:SetAlpha(originalAlpha)
+    badge.rim:SetAlpha(1 - originalAlpha)
+
+    if creatureAlpha > 0 then
+        local first = math.min(#CREATURE - 1, math.floor(creaturePosition))
+        local mix = creaturePosition - first
+        if badge.creatureAPath ~= CREATURE[first] then
+            badge.creatureA:SetTexture(CREATURE[first])
+            badge.creatureAPath = CREATURE[first]
+        end
+        if badge.creatureBPath ~= CREATURE[first + 1] then
+            badge.creatureB:SetTexture(CREATURE[first + 1])
+            badge.creatureBPath = CREATURE[first + 1]
+        end
+        local size = badge:GetWidth()
+            * (0.90 - 0.12 * (creaturePosition - 1) / (#CREATURE - 1)) * creatureScale
+        for _, texture in ipairs({ badge.creatureA, badge.creatureB }) do
+            texture:SetSize(size, size)
+            texture:ClearAllPoints()
+            texture:SetPoint("CENTER", badge, "CENTER", offsetX * badge:GetWidth(),
+                offsetY * badge:GetHeight())
+        end
+        badge.creatureA:SetAlpha(creatureAlpha * (1 - mix))
+        badge.creatureB:SetAlpha(creatureAlpha * mix)
+    else
+        badge.creatureA:SetAlpha(0)
+        badge.creatureB:SetAlpha(0)
+    end
 end
 
 local function StartStyleCast(castGUID)

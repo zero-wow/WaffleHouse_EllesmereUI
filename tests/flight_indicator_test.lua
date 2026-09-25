@@ -48,7 +48,8 @@ local function NewFrame(name)
     function f:CreateTexture()
         local texture = {}
         function texture:SetAllPoints() end
-        function texture:SetPoint() end
+        function texture:SetPoint(_, _, _, x, y) self.x, self.y = x or 0, y or 0 end
+        function texture:ClearAllPoints() end
         function texture:SetSize(w, h) self.width, self.height = w, h end
         function texture:SetTexture(path) self.path = path end
         function texture:SetBlendMode(mode) self.blendMode = mode end
@@ -84,7 +85,27 @@ for i = 1, 16 do
     local file = assert(io.open(name, "rb"), "missing animation art " .. name)
     file:close()
 end
-for _, name in ipairs({ "wind.png", "veil.png" }) do
+for i = 1, 20 do
+    local name = ("Media/FlightStyle/creature-%02d.png"):format(i)
+    local file = assert(io.open(name, "rb"), "missing creature art " .. name)
+    file:close()
+end
+for i = 1, 4 do
+    local name = ("Media/FlightStyle/turn-%02d.png"):format(i)
+    local file = assert(io.open(name, "rb"), "missing creature turn art " .. name)
+    file:close()
+end
+for gap = 1, 19 do
+    local suffixes = gap >= 6 and gap <= 10 and
+        (gap == 9 and { "50", "67" } or { "33", "67" }) or { "50" }
+    for _, suffix in ipairs(suffixes) do
+        local name = ("Media/FlightStyle/morph-g%02d-%s.png"):format(gap, suffix)
+        local file = assert(io.open(name, "rb"), "missing in-between art " .. name)
+        file:close()
+    end
+end
+for _, name in ipairs({ "wind.png", "veil.png", "rim.png", "empty-skyriding.png",
+        "empty-steady.png", "swirl-skyriding.png", "swirl-steady.png" }) do
     local path = "Media/FlightStyle/" .. name
     local file = assert(io.open(path, "rb"), "missing animation effect " .. path)
     file:close()
@@ -92,6 +113,7 @@ end
 
 event("PLAYER_LOGIN")
 assert(badge and badge.shown and badge.style == "steady", "steady aura should show the steady badge")
+assert(#badge.preloadedArt == 48, "all 48 creature stages should be loaded before the first cast")
 assert(badge.icon.path:find("flight%-16%.png"), "steady badge should use last art frame")
 assert(badge.mouse == false, "badge must not block ordinary HUD clicks")
 
@@ -110,21 +132,28 @@ assert(badge.mouse == false, "releasing Shift must stop intercepting clicks")
 
 event("UNIT_SPELLCAST_START", "player", "cast-one", 460003)
 assert(badge.scripts.OnUpdate, "Switch Flight Style cast must begin the animation")
-advance(2.5)
-assert(badge.icon.path:find("flight%-14%.png") or badge.icon.path:find("flight%-13%.png"),
-    "first half of the cast should still show the starting form in reverse")
-assert(badge.wind.alpha > 0 and badge.veil.alpha == 0,
-    "moving wind should build before the pose-changing flash")
-advance(1)
-assert(badge.veil.alpha > 0.8 and badge.icon.angle < 0,
-    "the bright veil and reverse spin should cover the sharp pose change")
-advance(1)
-assert(badge.veil.alpha == 0 and badge.wind.alpha > 0,
-    "the new form should clear before the cast finishes")
+assert(badge.original.alpha == 1 and badge.rim.alpha == 0,
+    "the original emblem must cover the layered art without doubling the rim")
+advance(0.4)
+assert(badge.creatureA.alpha > 0 and badge.creatureA.y > 0,
+    "the steady bird must fly up and away on its own layer")
+assert(badge.icon.path:find("empty%-steady%.png"),
+    "an empty gem must remain beneath the departing bird")
+advance(2.1)
+assert(badge.creatureA.alpha == 0 and badge.creatureB.alpha == 0,
+    "the gem must stay creature-free during the middle of the cast")
+assert(badge.icon.path:find("swirl%-steady%.png") and badge.wind.alpha > 0,
+    "the separately moving vortex must occupy the cast's middle")
+advance(1.5)
+assert(badge.creatureA.alpha > 0 or badge.creatureB.alpha > 0,
+    "the reverse morph must enter near the cast's end")
+assert(badge.creatureA.path:find("FlightStyle") and badge.rim.alpha == 1,
+    "creature stages must remain separate from the fixed compass rim")
 event("UNIT_SPELLCAST_INTERRUPTED", "player", "cast-one", 460003)
 assert(not badge.scripts.OnUpdate and badge.style == "steady", "interrupted cast must restore prior state")
-assert(badge.wind.alpha == 0 and badge.veil.alpha == 0 and badge.icon.angle == 0,
-    "interruption must clear all animated overlays and rotation")
+assert(badge.wind.alpha == 0 and badge.veil.alpha == 0 and badge.rim.alpha == 0
+    and badge.creatureA.alpha == 0 and badge.creatureB.alpha == 0,
+    "interruption must clear all animated layers")
 
 event("UNIT_SPELLCAST_START", "player", "cast-two", 460002)
 advance(5)
@@ -138,13 +167,13 @@ assert(badge.icon.path:find("flight%-01%.png"), "Skyriding must use first art fr
 
 event("UNIT_SPELLCAST_START", "player", "cast-forward", 436854)
 advance(2.5)
-assert(badge.icon.path:find("flight%-03%.png") or badge.icon.path:find("flight%-04%.png"),
-    "Skyriding must stay recognisable through the first half of the full cast")
+assert(badge.icon.path:find("swirl%-skyriding%.png") and badge.creatureA.alpha == 0,
+    "the dragon must leave an empty swirling center through the first half")
 advance(1.5)
-assert(badge.icon.path:find("flight%-09%.png") or badge.icon.path:find("flight%-10%.png"),
-    "the forward bird reveal must occur late in the cast")
+assert(badge.creatureA.alpha > 0 or badge.creatureB.alpha > 0,
+    "the forward dragon-to-bird morph must fly in late")
 event("UNIT_SPELLCAST_INTERRUPTED", "player", "cast-forward", 436854)
-assert(badge.style == "skyriding" and badge.icon.angle == 0,
+assert(badge.style == "skyriding" and badge.rim.alpha == 0,
     "cancelling the forward transition must restore its static dragon art")
 
 secret = true

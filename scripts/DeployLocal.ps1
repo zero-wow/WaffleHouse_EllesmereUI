@@ -34,7 +34,37 @@ for ($index = 1; $index -le 16; $index++) {
         throw "Art deployment mismatch: $name"
     }
 }
-foreach ($name in @('wind.png', 'veil.png')) {
+for ($index = 1; $index -le 20; $index++) {
+    $name = 'creature-{0:d2}.png' -f $index
+    Copy-Item -LiteralPath (Join-Path $sourceArt $name) -Destination (Join-Path $installedArt $name) -Force
+    if ((Get-FileHash -LiteralPath (Join-Path $sourceArt $name) -Algorithm SHA256).Hash -ne
+        (Get-FileHash -LiteralPath (Join-Path $installedArt $name) -Algorithm SHA256).Hash) {
+        throw "Art deployment mismatch: $name"
+    }
+}
+for ($index = 1; $index -le 4; $index++) {
+    $name = 'turn-{0:d2}.png' -f $index
+    Copy-Item -LiteralPath (Join-Path $sourceArt $name) -Destination (Join-Path $installedArt $name) -Force
+    if ((Get-FileHash -LiteralPath (Join-Path $sourceArt $name) -Algorithm SHA256).Hash -ne
+        (Get-FileHash -LiteralPath (Join-Path $installedArt $name) -Algorithm SHA256).Hash) {
+        throw "Art deployment mismatch: $name"
+    }
+}
+for ($gap = 1; $gap -le 19; $gap++) {
+    $suffixes = if ($gap -ge 6 -and $gap -le 10) {
+        if ($gap -eq 9) { @('50', '67') } else { @('33', '67') }
+    } else { @('50') }
+    foreach ($suffix in $suffixes) {
+        $name = 'morph-g{0:d2}-{1}.png' -f $gap, $suffix
+        Copy-Item -LiteralPath (Join-Path $sourceArt $name) -Destination (Join-Path $installedArt $name) -Force
+        if ((Get-FileHash -LiteralPath (Join-Path $sourceArt $name) -Algorithm SHA256).Hash -ne
+            (Get-FileHash -LiteralPath (Join-Path $installedArt $name) -Algorithm SHA256).Hash) {
+            throw "Art deployment mismatch: $name"
+        }
+    }
+}
+foreach ($name in @('wind.png', 'veil.png', 'rim.png', 'empty-skyriding.png',
+        'empty-steady.png', 'swirl-skyriding.png', 'swirl-steady.png')) {
     Copy-Item -LiteralPath (Join-Path $sourceArt $name) -Destination (Join-Path $installedArt $name) -Force
     if ((Get-FileHash -LiteralPath (Join-Path $sourceArt $name) -Algorithm SHA256).Hash -ne
         (Get-FileHash -LiteralPath (Join-Path $installedArt $name) -Algorithm SHA256).Hash) {
