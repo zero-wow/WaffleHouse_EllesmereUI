@@ -78,6 +78,8 @@ end
 
 local ticker
 local lastMounted
+local mountedAt
+local mountCastGUID
 local respectDismount = false
 local nextAttemptAt = 0
 local idleUntil = 0
@@ -91,11 +93,31 @@ end
 
 local function ObserveMountState()
     local mounted = IsMounted()
-    if lastMounted and not mounted and not InCombatLockdown() then
-        respectDismount = true
+    if mounted and not lastMounted then
+        mountedAt = GetTime()
+        mountCastGUID = nil
+        respectDismount = false
+    elseif lastMounted and not mounted then
+        if not InCombatLockdown() then
+            -- A quick dismount is an intentional stop. Later dismounts can be
+            -- caused by looting and should let the idle auto-mount resume.
+            respectDismount = mountedAt ~= nil and GetTime() - mountedAt <= 5
+            WaitForIdle(1)
+        end
+        mountedAt = nil
     end
     lastMounted = mounted
     if mounted then nextAttemptAt = 0 end
+end
+
+local function IsJournalMountSpell(spellID)
+    if type(spellID) ~= "number" or (issecretvalue and issecretvalue(spellID))
+        or not (C_MountJournal and type(C_MountJournal.GetMountFromSpell) == "function") then
+        return false
+    end
+    local ok, mountID = pcall(C_MountJournal.GetMountFromSpell, spellID)
+    if not ok or (issecretvalue and issecretvalue(mountID)) then return false end
+    return mountID ~= nil
 end
 
 local function TryAutoMount()
@@ -158,9 +180,11 @@ events:RegisterEvent("PLAYER_STOPPED_MOVING")
 events:RegisterEvent("LOOT_OPENED")
 events:RegisterEvent("LOOT_CLOSED")
 events:RegisterEvent("UNIT_SPELLCAST_SENT")
+events:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
+events:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED")
 events:RegisterEvent("PLAYER_REGEN_DISABLED")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
-events:SetScript("OnEvent", function(_, event, unit)
+events:SetScript("OnEvent", function(_, event, unit, arg2, arg3, arg4)
     if event == "PLAYER_LOGIN" then
         addon.RefreshAutoMount()
     elseif event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
@@ -174,7 +198,27 @@ events:SetScript("OnEvent", function(_, event, unit)
         lootOpen = false
         WaitForIdle(1)
     elseif event == "UNIT_SPELLCAST_SENT" then
-        if unit == "player" then WaitForIdle(1) end
+        if unit == "player" then
+            WaitForIdle(1)
+            -- SENT carries target, castGUID, spellID after the unit token.
+            if IsJournalMountSpell(arg4) and type(arg3) == "string"
+                and not (issecretvalue and issecretvalue(arg3)) then
+                mountCastGUID = arg3
+            end
+        end
+    elseif event == "UNIT_SPELLCAST_INTERRUPTED" then
+        -- An interrupted mount cast is the player's other explicit stop
+        -- signal. Other interrupted spells must not disable auto-mounting.
+        if unit == "player" and mountCastGUID
+            and not (issecretvalue and issecretvalue(arg2)) and arg2 == mountCastGUID then
+            mountCastGUID = nil
+            respectDismount = true
+        end
+    elseif event == "UNIT_SPELLCAST_SUCCEEDED" then
+        if unit == "player" and mountCastGUID
+            and not (issecretvalue and issecretvalue(arg2)) and arg2 == mountCastGUID then
+            mountCastGUID = nil
+        end
     elseif event == "PLAYER_REGEN_DISABLED" then
         sawCombat = true
         attemptToken = attemptToken + 1

@@ -24,7 +24,10 @@ C_Timer = {
         return ticker
     end,
 }
-C_MountJournal = { SummonByID = function(id) summons[#summons + 1] = id end }
+C_MountJournal = {
+    SummonByID = function(id) summons[#summons + 1] = id end,
+    GetMountFromSpell = function(spellID) return spellID == 1234 and 42 or nil end,
+}
 GetTime = function() return now end
 InCombatLockdown = function() return state.combat end
 UnitAffectingCombat = function() return state.combat end
@@ -119,9 +122,59 @@ assert(#summons == 2, "a mounted player must not be summoned again")
 state.mounted = false
 frame:OnEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
 tick()
-assert(#summons == 2, "manual dismount must suppress remounting")
+assert(#summons == 2, "dismounting must still allow a quiet second")
+advance(1.1)
+tick()
+assert(#summons == 3, "a later dismount must let auto-mounting resume")
+
+state.mounted = true
+frame:OnEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+advance(2)
+state.mounted = false
+frame:OnEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+advance(20)
+tick()
+assert(#summons == 3, "dismounting within five seconds must pause auto-mounting")
+
+state.mounted = true
+frame:OnEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+advance(6)
+state.mounted = false
+frame:OnEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+advance(1.1)
+tick()
+assert(#summons == 4, "mounting manually must re-arm a paused auto-mount")
+
+state.mounted = true
+frame:OnEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+advance(1)
+state.mounted = false
+frame:OnEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+advance(12)
+tick()
+assert(#summons == 4, "a second quick dismount must pause again")
 combatCycle()
-assert(#summons == 3, "the next combat exit must clear manual-dismount suppression")
+assert(#summons == 5, "the next combat exit must clear quick-dismount suppression")
+
+frame:OnEvent("UNIT_SPELLCAST_SENT", "player", nil, "mount-cast", 1234)
+frame:OnEvent("UNIT_SPELLCAST_INTERRUPTED", "player", "mount-cast", 1234)
+advance(12)
+tick()
+assert(#summons == 5, "interrupting a mount cast must pause auto-mounting")
+state.mounted = true
+frame:OnEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+advance(6)
+state.mounted = false
+frame:OnEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+advance(1.1)
+tick()
+assert(#summons == 6, "mounting again must re-arm after an interrupted cast")
+
+frame:OnEvent("UNIT_SPELLCAST_SENT", "player", nil, "other-cast", 999)
+frame:OnEvent("UNIT_SPELLCAST_INTERRUPTED", "player", "other-cast", 999)
+advance(12)
+tick()
+assert(#summons == 7, "interrupting a non-mount cast must not pause auto-mounting")
 
 state.combat = true
 frame:OnEvent("PLAYER_REGEN_DISABLED")

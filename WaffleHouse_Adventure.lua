@@ -434,7 +434,7 @@ function addon.BuildAdventurePage(parent, yOffset)
         {
             type = "toggle",
             text = "Auto Mount Out of Combat",
-            tooltip = "When unmounted and out of combat, try to mount after three seconds to leave time for looting. Wait until movement, looting, and spellcasts stop, then allow at least one quiet second. A manual dismount is respected until your next combat ends. This is off by default, and mounting can still fail where the game forbids it.",
+            tooltip = "When unmounted and out of combat, try to mount after three seconds to leave time for looting. Wait until movement, looting, and spellcasts stop, then allow at least one quiet second. Dismounting within five seconds of mounting or interrupting a mount cast pauses auto-mounting until you mount again or finish another combat. This is off by default, and mounting can still fail where the game forbids it.",
             getValue = function()
                 return GetSettings().autoMountAfterCombat == true
             end,
