@@ -36,7 +36,7 @@ for _, example in ipairs({
 end
 slash("  random transmog  "); flush()
 assert(calls[#calls][2] == "Adventure" and calls[#calls][3] == "RANDOM TRANSMOG"
-    and calls[#calls][4] == "Random Saved Outfit", "transmog must deep-link to its setting")
+    and calls[#calls][4] == "Outfit Change Reminder", "transmog must deep-link to its setting")
 slash("frozen items"); flush()
 assert(calls[#calls][2] == "Bags" and calls[#calls][3] == "MANAGEMENT")
 local before = #calls

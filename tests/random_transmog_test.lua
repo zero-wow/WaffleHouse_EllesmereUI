@@ -1,82 +1,70 @@
 local source = arg[1] or "WaffleHouse_RandomTransmog.lua"
-local settings = { randomTransmogEnabled = false, randomTransmogInterval = "5" }
+local settings = { randomTransmogEnabled = true, randomTransmogInterval = "5", randomTransmogButtonEnabled = true }
 local addon = { GetSettings = function() return settings end }
-local state = {}
-local now, frame, button = 0, nil, nil
-local timers, changes = {}, {}
+local state, now, events, button, timers, messages = {}, 0, nil, nil, {}, {}
 local activeID = 1
 local entries = {
-    { outfitID = 1, name = "Current", isDisabled = false, isEventOutfit = false },
-    { outfitID = 2, name = "Other", isDisabled = false, isEventOutfit = false },
-    { outfitID = 3, name = "Event", isDisabled = false, isEventOutfit = true },
-    { outfitID = 4, name = "Disabled", isDisabled = true, isEventOutfit = false },
-    { outfitID = 5, name = "Locked", isDisabled = false, isEventOutfit = false },
+    { outfitID = 1, playerFacingOutfitIndex = 1, name = "Current", isDisabled = false, isEventOutfit = false },
+    { outfitID = 2, playerFacingOutfitIndex = 2, name = "Other", isDisabled = false, isEventOutfit = false },
+    { outfitID = 3, playerFacingOutfitIndex = 3, name = "Event", isDisabled = false, isEventOutfit = true },
+    { outfitID = 4, playerFacingOutfitIndex = 4, name = "Disabled", isDisabled = true, isEventOutfit = false },
+    { outfitID = 5, playerFacingOutfitIndex = 5, name = "Locked", isDisabled = false, isEventOutfit = false },
 }
 
 GetTime = function() return now end
 UIParent = { GetCenter = function() return 500, 400 end }
 IsShiftKeyDown = function() return false end
-CreateFrame = function(kind)
+IsControlKeyDown = function() return state.ctrl end
+InCombatLockdown = function() return state.combat end
+RegisterStateDriver = function() end
+UnregisterStateDriver = function() end
+DEFAULT_CHAT_FRAME = { AddMessage = function(_, message) messages[#messages + 1] = message end }
+C_Timer = { After = function(delay, callback) timers[#timers + 1] = { due = now + delay, callback = callback } end }
+
+local function newTexture()
+    return {
+        SetAllPoints = function() end,
+        SetTexture = function(self, value) self.path = value end,
+        SetTexCoord = function(self, ...) self.texCoord = { ... } end,
+        SetRotation = function(self, value) self.rotation = value end,
+        SetAlpha = function(self, value) self.alpha = value end,
+    }
+end
+
+CreateFrame = function(kind, _, _, template)
     if kind == "Button" then
+        assert(template == "SecureActionButtonTemplate", "outfits must use the secure button")
         button = {
-            SetSize = function() end, SetFrameStrata = function() end,
-            SetMovable = function() end, SetClampedToScreen = function() end,
-            RegisterForClicks = function() end, RegisterForDrag = function() end,
+            attributes = {},
+            SetFrameStrata = function() end, SetMovable = function() end,
+            SetClampedToScreen = function() end, RegisterForClicks = function() end,
+            RegisterForDrag = function() end, EnableMouseWheel = function() end,
+            CreateTexture = newTexture,
+            SetSize = function(self, width) self.size = width end,
             ClearAllPoints = function() end, SetPoint = function() end,
             Show = function(self) self.visible = true end,
-            Hide = function(self) self.visible = false; if self.OnHide then self:OnHide() end end,
+            Hide = function(self) self.visible = false end,
             StopMovingOrSizing = function() end,
-            SetScript = function(self, event, handler) self[event] = handler end,
-            CreateTexture = function()
-                return {
-                    SetAllPoints = function() end, SetTexture = function() end,
-                    SetBlendMode = function() end, SetVertexColor = function() end,
-                    SetSize = function() end, SetPoint = function() end,
-                    SetRotation = function() end,
-                    SetAlpha = function(self, value) self.alpha = value end,
-                }
+            SetAttribute = function(self, key, value)
+                assert(not state.combat, "never change secure attributes in combat")
+                self.attributes[key] = value
             end,
+            HookScript = function(self, event, handler) self[event] = handler end,
+            SetScript = function(self, event, handler) self[event] = handler end,
         }
         return button
     end
-    frame = {
-        RegisterEvent = function() end,
-        SetScript = function(self, _, handler) self.OnEvent = handler end,
-    }
-    return frame
+    events = { RegisterEvent = function() end, SetScript = function(self, _, handler) self.OnEvent = handler end }
+    return events
 end
-C_Timer = {
-    After = function(delay, callback)
-        assert(delay >= 30, "randomizer must not poll rapidly")
-        timers[#timers + 1] = { due = now + delay, callback = callback }
-    end,
-}
-Enum = { TransmogSituationTrigger = { Manual = 1 } }
+
 C_TransmogOutfitInfo = {
     GetOutfitsInfo = function() return entries end,
     GetActiveOutfitID = function() return activeID end,
     IsLockedOutfit = function(id) return id == 5 or state.lockedActive == true end,
-    IsTransmogEnabled = function() return not state.transmogDisabled end,
-    HasPendingOutfitTransmogs = function() return state.pending end,
-    InTransmogEvent = function() return state.event end,
-    ChangeDisplayedOutfit = function(id, trigger, toggleLock, allowRemove)
-        assert(trigger == 1 and toggleLock == false and allowRemove == false,
-            "switch must use manual trigger without clearing or toggling outfit lock")
-        changes[#changes + 1] = id
-        activeID = id
-        frame:OnEvent("TRANSMOG_DISPLAYED_OUTFIT_CHANGED")
-    end,
+    IsTransmogEnabled = function() return not state.disabled end,
+    ChangeDisplayedOutfit = function() error("protected C API must never be called by addon Lua") end,
 }
-C_Transmog = { IsAtTransmogNPC = function() return state.atNPC end }
-TransmogFrame = { IsShown = function() return state.editing end }
-InCombatLockdown = function() return state.combat end
-UnitAffectingCombat = function() return state.combat end
-UnitIsDeadOrGhost = function() return state.dead end
-UnitOnTaxi = function() return state.taxi end
-UnitInVehicle = function() return state.vehicle end
-GetUnitSpeed = function() return state.moving and 7 or 0 end
-UnitCastingInfo = function() return state.casting end
-UnitChannelInfo = function() return state.channeling end
 math.random = function(count) assert(count == 1); return 1 end
 
 local function advance(seconds)
@@ -84,90 +72,70 @@ local function advance(seconds)
     local pending = timers
     timers = {}
     for _, timer in ipairs(pending) do
-        if timer.due <= now then timer.callback()
-        else timers[#timers + 1] = timer end
+        if timer.due <= now then timer.callback() else timers[#timers + 1] = timer end
     end
 end
 
 assert(loadfile(source))("WaffleHouse_EllesmereUI", addon)
-frame:OnEvent("PLAYER_LOGIN")
-advance(600)
-assert(#changes == 0, "disabled randomizer must not switch")
+events:OnEvent("PLAYER_LOGIN")
+assert(button and button.visible and button.attributes.type == "outfit"
+    and button.attributes["outfit-index"] == 2
+    and button.attributes.action == "change" and button.attributes["shift-type1"] == "",
+    "must arm a non-toggling secure action for a different valid outfit")
+assert(button.back.path:find("button-back.png", 1, true)
+    and button.front.path:find("button-front.png", 1, true)
+    and button.fill.path:find("button-fill-atlas.png", 1, true)
+    and #button.gems == 4, "button must layer artwork, fill, bezel and gems")
 
-settings.randomTransmogEnabled = true
-addon.RefreshRandomTransmog()
-advance(299)
-assert(#changes == 0, "enabling must not immediately switch")
-advance(1)
-assert(#changes == 1 and changes[1] == 2, "must pick only a saved, unlocked, different outfit")
-advance(299)
-assert(#changes == 1, "successful change must restart interval")
-
-activeID = 1
-frame:OnEvent("TRANSMOG_DISPLAYED_OUTFIT_CHANGED")
-advance(1)
-assert(#changes == 1, "manual selection must not be immediately undone")
-state.combat = true
-advance(300)
-assert(#changes == 1, "never switch in combat")
-state.combat = false
-state.moving = true
-advance(30)
-assert(#changes == 1, "never switch while moving")
-state.moving = false
-state.pending = true
-advance(30)
-assert(#changes == 1, "never switch with pending transmog edits")
-state.pending = false
-state.lockedActive = true
-advance(30)
-assert(#changes == 1, "never override a locked active outfit")
-state.lockedActive = false
-advance(300)
-assert(#changes == 2, "try again at the next interval after a locked-outfit skip")
-
-activeID = 1
-frame:OnEvent("TRANSMOG_DISPLAYED_OUTFIT_CHANGED")
-state.editing = true
-advance(300)
-assert(#changes == 2, "never switch while editing in the transmog frame")
-state.editing = false
-state.atNPC = true
-advance(30)
-assert(#changes == 2, "never switch at the transmog NPC")
-state.atNPC = false
-local getOutfits = C_TransmogOutfitInfo.GetOutfitsInfo
-C_TransmogOutfitInfo.GetOutfitsInfo = nil
-advance(30)
-assert(#changes == 2, "missing Retail APIs must fail closed")
-C_TransmogOutfitInfo.GetOutfitsInfo = getOutfits
-advance(30)
-assert(#changes == 3, "retry after a temporary API or safety restriction")
-
-activeID = 1
-frame:OnEvent("TRANSMOG_DISPLAYED_OUTFIT_CHANGED")
-settings.randomTransmogEnabled = false
-addon.RefreshRandomTransmog()
-advance(600)
-assert(#changes == 3, "turning off must invalidate outstanding timers")
-
-settings.randomTransmogButtonEnabled = true
-addon.RefreshRandomTransmogButton()
-assert(button and button.visible and #button.ticks == 32, "instant button must have a visible channel")
-settings.randomTransmogEnabled = true
-addon.RefreshRandomTransmog()
 advance(150)
 button:OnUpdate(0.2)
-assert(button.ticks[1].alpha > 0 and button.ticks[16].alpha > 0
-    and button.ticks[32].alpha == 0, "channel must fill toward the next auto attempt")
-settings.randomTransmogEnabled = false
-addon.RefreshRandomTransmog()
-activeID = 1
-button:OnClick()
-assert(#changes == 4 and changes[4] == 2, "button must switch immediately, even with timed changes off")
-for _ = 1, 20 do button:OnUpdate(0.1) end
-assert(button.manualProgress == false, "confirmed manual switch must finish its animation")
-state.combat = true
-assert(addon.RandomizeTransmogNow() == false and #changes == 4, "manual switch must honor combat safety")
+assert(button.lastFrame > 25 and button.lastFrame < 38, "channel fills halfway through reminder")
+advance(150)
+button:OnUpdate(0.2)
+assert(button.lastFrame == 63 and activeID == 1, "timer fills but never performs protected change")
 
+-- Simulate WoW's secure dispatch; addon Lua only receives the resulting event.
+assert(button.attributes["outfit-index"] == 2)
+activeID = 2
+events:OnEvent("TRANSMOG_DISPLAYED_OUTFIT_CHANGED")
+button:PostClick("LeftButton")
+advance(0)
+assert(button.attributes["outfit-index"] == 1, "next secure click must select another outfit")
+for _ = 1, 20 do button:OnUpdate(0.1) end
+assert(button.manualProgress == false, "confirmed click finishes channel sweep")
+
+state.ctrl = true
+button:OnMouseWheel(1)
+assert(button.size == 68 and settings.randomTransmogButtonSize == 68,
+    "Ctrl+wheel should resize the complete layered button")
+for _ = 1, 20 do button:OnMouseWheel(-1) end
+assert(button.size == 16, "smallest supported size is 16 pixels")
+for _ = 1, 50 do button:OnMouseWheel(1) end
+assert(button.size == 160, "largest supported size is 160 pixels")
+state.combat = true
+button:OnMouseWheel(-1)
+assert(button.size == 160, "never resize a protected frame in combat")
+state.combat = false
+events:OnEvent("PLAYER_REGEN_ENABLED")
+
+state.lockedActive = true
+events:OnEvent("TRANSMOG_OUTFITS_CHANGED")
+advance(0)
+assert(button.attributes.type == nil, "locked outfit must disarm the button")
+state.lockedActive = false
+events:OnEvent("TRANSMOG_OUTFITS_CHANGED")
+advance(0)
+assert(button.attributes.type == "outfit")
+
+settings.randomTransmogButtonEnabled = false
+addon.RefreshRandomTransmogButton()
+assert(button.visible == false)
+assert(addon.RandomizeTransmogNow() == true and button.visible == true,
+    "slash action may arm and reveal, but not simulate a protected click")
+assert(#messages > 0)
+
+local file = assert(io.open(source, "rb"))
+local text = file:read("*a")
+file:close()
+assert(not text:find("outfits.ChangeDisplayedOutfit%(", 1), "protected C API must not be invoked")
 print("random_transmog_test: ok")

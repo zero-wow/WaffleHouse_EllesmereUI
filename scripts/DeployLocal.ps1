@@ -33,13 +33,15 @@ foreach ($name in @('WaffleHouse_EllesmereUI.lua', 'WaffleHouse_Adventure.lua', 
     Copy-Item -LiteralPath (Join-Path $source $name) -Destination (Join-Path $installed $name) -Force
 }
 
-$sourceTransmogArt = Join-Path $source 'Media\RandomTransmog\random-outfit-button.png'
-$installedTransmogArt = Join-Path $installed 'Media\RandomTransmog\random-outfit-button.png'
-New-Item -ItemType Directory -Path (Split-Path -Parent $installedTransmogArt) -Force | Out-Null
-Copy-Item -LiteralPath $sourceTransmogArt -Destination $installedTransmogArt -Force
-if ((Get-FileHash -LiteralPath $sourceTransmogArt -Algorithm SHA256).Hash -ne
-    (Get-FileHash -LiteralPath $installedTransmogArt -Algorithm SHA256).Hash) {
-    throw 'Random-transmog art deployment mismatch.'
+foreach ($name in @('button-back.png', 'button-front.png', 'button-gem.png', 'button-fill-atlas.png')) {
+    $sourceTransmogArt = Join-Path $source "Media\RandomTransmog\$name"
+    $installedTransmogArt = Join-Path $installed "Media\RandomTransmog\$name"
+    New-Item -ItemType Directory -Path (Split-Path -Parent $installedTransmogArt) -Force | Out-Null
+    Copy-Item -LiteralPath $sourceTransmogArt -Destination $installedTransmogArt -Force
+    if ((Get-FileHash -LiteralPath $sourceTransmogArt -Algorithm SHA256).Hash -ne
+        (Get-FileHash -LiteralPath $installedTransmogArt -Algorithm SHA256).Hash) {
+        throw "Random-transmog art deployment mismatch: $name"
+    }
 }
 
 $sourceArt = Join-Path $source 'Media\FlightStyle'

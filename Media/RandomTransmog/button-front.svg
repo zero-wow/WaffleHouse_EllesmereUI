@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="gold" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#fff0ae"/><stop offset=".38" stop-color="#d79732"/><stop offset=".75" stop-color="#8e481a"/><stop offset="1" stop-color="#f8ca6c"/></linearGradient>
+    <radialGradient id="sapphire"><stop stop-color="#3152ad"/><stop offset="1" stop-color="#09163d"/></radialGradient>
+  </defs>
+  <circle cx="128" cy="128" r="108" fill="none" stroke="#26100a" stroke-width="12"/>
+  <circle cx="128" cy="128" r="108" fill="none" stroke="url(#gold)" stroke-width="7"/>
+  <circle cx="128" cy="128" r="79" fill="none" stroke="#25100b" stroke-width="10"/>
+  <circle cx="128" cy="128" r="79" fill="none" stroke="url(#gold)" stroke-width="6"/>
+  <g id="gem">
+    <path d="M128 4 L143 20 L128 36 L113 20 Z" fill="#311408" stroke="#f6c76b" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M128 10 L137 20 L128 30 L119 20 Z" fill="url(#sapphire)" stroke="#ba7628" stroke-width="1.5"/>
+  </g>
+  <use href="#gem" transform="rotate(90 128 128)"/>
+  <use href="#gem" transform="rotate(180 128 128)"/>
+  <use href="#gem" transform="rotate(270 128 128)"/>
+</svg>

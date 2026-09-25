@@ -22,9 +22,9 @@ local routes = {
     ["item view"] = { "Vendor", "ITEM VIEW" },
     ["interact key"] = { "Vendor", "INTERACT KEY" },
     ["shopping list"] = { "Vendor", "SHOPPING LIST & NOTES" },
-    ["transmog"] = { "Adventure", "RANDOM TRANSMOG", "Random Saved Outfit" },
-    ["random transmog"] = { "Adventure", "RANDOM TRANSMOG", "Random Saved Outfit" },
-    ["random saved outfit"] = { "Adventure", "RANDOM TRANSMOG", "Random Saved Outfit" },
+    ["transmog"] = { "Adventure", "RANDOM TRANSMOG", "Outfit Change Reminder" },
+    ["random transmog"] = { "Adventure", "RANDOM TRANSMOG", "Outfit Change Reminder" },
+    ["random saved outfit"] = { "Adventure", "RANDOM TRANSMOG", "Outfit Change Reminder" },
     ["instant outfit button"] = { "Adventure", "RANDOM TRANSMOG", "Show Instant Outfit Button" },
     ["mount"] = { "Adventure", "MOUNTING" },
     ["mounting"] = { "Adventure", "MOUNTING" },
@@ -56,7 +56,7 @@ SlashCmdList.WAFFLEHOUSEOPTIONS = function(input)
     local key = Normalize(input)
     if key == "" then key = "config" end
     if key == "help" then
-        Message("/wh config, adventure, queue, bags, automation, vendor, transmog, mount, flight, delve; section names also work. /wh transmog now switches immediately.")
+        Message("/wh config, adventure, queue, bags, automation, vendor, transmog, mount, flight, delve; section names also work. /wh transmog now readies the wardrobe button for your click.")
         return
     end
     if key == "transmog now" or key == "random now" then

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 256 256">
+  <defs>
+    <radialGradient id="disc"><stop stop-color="#254d91"/><stop offset=".58" stop-color="#10244f"/><stop offset="1" stop-color="#030a19"/></radialGradient>
+    <linearGradient id="cloth" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#fff6cc"/><stop offset=".48" stop-color="#f9ca63"/><stop offset="1" stop-color="#ba6a1f"/></linearGradient>
+  </defs>
+  <circle cx="128" cy="128" r="108" fill="#050d1c"/>
+  <circle cx="128" cy="128" r="92" fill="none" stroke="#061124" stroke-width="17"/>
+  <circle cx="128" cy="128" r="79" fill="url(#disc)"/>
+  <path d="M106 72 L91 81 L69 78 L51 103 L72 119 L83 111 L83 181 L105 181 L105 193 L151 193 L151 181 L173 181 L173 111 L184 119 L205 103 L187 78 L165 81 L150 72 L141 88 L115 88 Z" fill="#24140d" stroke="#070d1b" stroke-width="9" stroke-linejoin="round"/>
+  <path d="M106 72 L91 81 L69 78 L51 103 L72 119 L83 111 L83 181 L105 181 L105 193 L151 193 L151 181 L173 181 L173 111 L184 119 L205 103 L187 78 L165 81 L150 72 L141 88 L115 88 Z" fill="url(#cloth)" stroke="#ffdc82" stroke-width="2" stroke-linejoin="round"/>
+  <path d="M106 73 L115 90 L141 90 L150 73 M84 110 L94 96 M172 110 L162 96 M104 181 L152 181" fill="none" stroke="#9b581b" stroke-width="5" stroke-linecap="round"/>
+  <path d="M115 90 L128 105 L141 90" fill="none" stroke="#fff8d7" stroke-width="4" stroke-linejoin="round"/>
+</svg>

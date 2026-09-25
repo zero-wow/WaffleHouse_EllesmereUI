@@ -601,8 +601,8 @@ function addon.BuildAdventurePage(parent, yOffset)
     _, h = W:DualRow(parent, y,
         {
             type = "toggle",
-            text = "Random Saved Outfit",
-            tooltip = "Periodically switch among your saved, unlocked outfits. Never creates or edits an outfit, spends gold, switches in combat, or overrides a locked outfit. Waits while moving, casting, or editing transmog. Manual outfit changes restart the timer. Off by default on public installs.",
+            text = "Outfit Change Reminder",
+            tooltip = "Fill the wardrobe button's channel toward the next outfit-change reminder. The protected outfit action requires your physical click; an addon timer cannot apply an outfit automatically. Manual outfit changes restart the timer. Off by default on public installs.",
             getValue = function()
                 return GetSettings().randomTransmogEnabled == true
             end,
@@ -613,11 +613,11 @@ function addon.BuildAdventurePage(parent, yOffset)
         },
         {
             type = "dropdown",
-            text = "Change Outfit Every",
+            text = "Remind Every",
             values = { ["5"] = "5 Minutes", ["15"] = "15 Minutes", ["30"] = "30 Minutes",
                 ["60"] = "1 Hour", ["120"] = "2 Hours", ["240"] = "4 Hours" },
             order = { "5", "15", "30", "60", "120", "240" },
-            tooltip = "Time between attempts, beginning when enabled or after an outfit change. Unsafe conditions defer the attempt without rapid retries.",
+            tooltip = "Time until the wardrobe channel is full and ready for your next click. Begins when enabled or after an outfit change.",
             getValue = function()
                 return GetSettings().randomTransmogInterval
             end,
@@ -632,7 +632,7 @@ function addon.BuildAdventurePage(parent, yOffset)
         {
             type = "toggle",
             text = "Show Instant Outfit Button",
-            tooltip = "Show a movable wardrobe button. Click to choose another unlocked saved outfit now, even if timed switching is off; Shift-drag to reposition. Its glowing channel fills toward the next automatic outfit attempt and briefly surges on a confirmed manual change. Off by default on public installs.",
+            tooltip = "Show a secure wardrobe button. An unlocked saved outfit is selected ahead of time; your click applies it through WoW's protected outfit action. Shift-drag to move and Ctrl+wheel to size it from 16 to 160 pixels. The channel shows reminder progress and briefly fills after a confirmed click. Off by default on public installs.",
             getValue = function()
                 return GetSettings().randomTransmogButtonEnabled == true
             end,
