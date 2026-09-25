@@ -64,6 +64,18 @@ local function NewFrame(name)
         if self.scripts.OnHide then self.scripts.OnHide(self) end
     end
     function f:IsShown() return self.shown end
+    function f:CreateFontString()
+        local label = {}
+        function label:SetFont() end
+        function label:SetJustifyH() end
+        function label:SetTextColor() end
+        function label:SetAlpha(value) self.alpha = value end
+        function label:SetText(value) self.text = value end
+        function label:SetWidth(value) self.width = value end
+        function label:ClearAllPoints() end
+        function label:SetPoint(_, _, _, x, y) self.x, self.y = x, y end
+        return label
+    end
     function f:CreateTexture(_, layer, _, sublevel)
         local texture = { layer = layer, sublevel = sublevel or 0 }
         function texture:SetAllPoints() end
@@ -375,6 +387,120 @@ end
 ornamentsFit("small")
 ornamentsFit("medium")
 ornamentsFit("large")
+
+settings.flightIndicatorLayout = "compact"
+settings.flightIndicatorSize = "medium"
+addon.RefreshFlightIndicator()
+assert(badge.width == 104 and badge.height == 40
+    and badge.x == -730 and badge.y == 338,
+    "Radar Compact should be a low-profile readout beside the default radar launcher")
+assert(badge.compact.surface.alpha > 0 and badge.icon.alpha == 0
+    and badge.compact.label.text == "STEADY"
+    and badge.compact.icon.path:find("creature%-20%.png"),
+    "compact mode must use the radar-styled readout rather than a shrunken full emblem")
+for _, size in ipairs({ "small", "medium", "large" }) do
+    settings.flightIndicatorSize = size
+    addon.RefreshFlightIndicator()
+    local compact = badge.compact
+    assert(compact.label.x + compact.label.width <= badge.width - 4,
+        "compact label must not touch the right edge at " .. size)
+    assert(compact.pips[6].x + compact.pips[6].width <= badge.width - 4,
+        "compact charge dots must stay inside the readout at " .. size)
+    assert(compact.dial.x + compact.dial.width < compact.label.x,
+        "compact creature dial and label need a visible gutter at " .. size)
+end
+settings.flightIndicatorSize = "medium"
+addon.RefreshFlightIndicator()
+local originalWidth, originalHeight, originalCenter =
+    UIParent.GetWidth, UIParent.GetHeight, UIParent.GetCenter
+UIParent.GetWidth = function() return 640 end
+UIParent.GetHeight = function() return 480 end
+UIParent.GetCenter = function() return 320, 240 end
+addon.RefreshFlightIndicator()
+assert(badge.x == -90 and badge.y == 38,
+    "Radar Compact's default must stay beside the launcher on a small screen")
+settings.flightIndicatorCompactX, settings.flightIndicatorCompactY = -1000, 1000
+addon.RefreshFlightIndicator()
+assert(math.abs(badge.x) <= (640 - badge.width) / 2
+    and math.abs(badge.y) <= (480 - badge.height) / 2,
+    "a dragged compact readout must remain on a small screen")
+UIParent.GetWidth, UIParent.GetHeight, UIParent.GetCenter =
+    originalWidth, originalHeight, originalCenter
+settings.flightIndicatorCompactX, settings.flightIndicatorCompactY = nil, nil
+addon.RefreshFlightIndicator()
+shift = true
+event("MODIFIER_STATE_CHANGED")
+badge.x, badge.y = -400, 300
+badge.scripts.OnDragStop(badge)
+assert(settings.flightIndicatorCompactX == -400 and settings.flightIndicatorCompactY == 300,
+    "compact Shift-drag must save an independent position")
+settings.flightIndicatorLayout = "emblem"
+addon.RefreshFlightIndicator()
+assert(badge.x == 110 and badge.y == -80 and badge.icon.alpha == 1
+    and badge.compact.surface.alpha == 0,
+    "switching back must restore the full emblem and its own position")
+settings.flightIndicatorLayout = "compact"
+addon.RefreshFlightIndicator()
+assert(badge.x == -400 and badge.y == 300,
+    "returning to Radar Compact must restore its saved position")
+shift = false
+event("MODIFIER_STATE_CHANGED")
+
+aura = nil
+chargeStart = now
+event("UNIT_AURA", "player")
+advance(0.3)
+assert(badge.compact.label.text == "SKYRIDE"
+    and badge.compact.icon.path:find("creature%-01%.png")
+    and badge.compact.pips[1].alpha > badge.compact.pips[6].alpha
+    and badge.chargeGems[1].core.alpha == 0,
+    "compact Skyriding should show its own silhouette and restrained charge dots")
+settings.flightIndicatorCharges = false
+addon.RefreshFlightIndicator()
+assert(badge.compact.pips[1].alpha == 0,
+    "the charge setting must also control Radar Compact's dots")
+settings.flightIndicatorCharges = true
+addon.RefreshFlightIndicator()
+advance(0.3)
+assert(badge.compact.pips[1].alpha > 0,
+    "restoring charges must relight Radar Compact's dots")
+event("UNIT_SPELLCAST_START", "player", "compact-forward", 436854)
+advance(2.5)
+assert(badge.compact.fill.alpha > 0
+    and math.abs(badge.compact.fill.width - 49) < 0.001
+    and badge.compact.icon.path:find("creature%-01%.png")
+    and badge.compact.pips[1].alpha == 0 and badge.castTicks[1].alpha == 0,
+    "compact mode should show cast progress without crowding its tiny silhouette")
+advance(1.5)
+aura = true
+event("UNIT_SPELLCAST_SUCCEEDED", "player", "compact-forward", 436854)
+assert(badge.scripts.OnUpdate and badge.style == "skyriding",
+    "an early success must not shorten Radar Compact's cast line")
+advance(1)
+assert(badge.style == "steady" and badge.compact.label.text == "STEADY"
+    and badge.compact.icon.path:find("creature%-20%.png")
+    and badge.compact.fill.alpha == 0,
+    "compact mode must settle on the new state at cast completion")
+event("UNIT_SPELLCAST_START", "player", "compact-reverse", 460003)
+advance(2.5)
+assert(badge.compact.label.text == "STEADY"
+    and badge.compact.icon.path:find("creature%-20%.png")
+    and badge.compact.fill.width > 0,
+    "the compact reverse cast should retain its old state until the handoff")
+advance(2.5)
+aura = nil
+event("UNIT_SPELLCAST_SUCCEEDED", "player", "compact-reverse", 460003)
+assert(badge.style == "skyriding" and badge.compact.label.text == "SKYRIDE"
+    and badge.compact.icon.path:find("creature%-01%.png"),
+    "the compact reverse cast must settle on the dragon state")
+
+settings.flightIndicatorCastProgress = false
+event("UNIT_SPELLCAST_START", "player", "compact-no-bar", 460002)
+advance(0.5)
+assert(badge.compact.fill.alpha == 0 and badge.compact.track.alpha == 0,
+    "the cast-progress option must also control Radar Compact")
+event("UNIT_SPELLCAST_INTERRUPTED", "player", "compact-no-bar", 460002)
+settings.flightIndicatorCastProgress = true
 
 settings.flightIndicatorEnabled = false
 addon.RefreshFlightIndicator()

@@ -26,8 +26,14 @@ assert(adventure:find('muted and 0.05 or 0.66', 1, true), "muted status must use
 assert(main:find('WaffleHouseDB.flightIndicatorCharges = true', 1, true)
     and main:find('WaffleHouseDB.flightIndicatorCastProgress = true', 1, true),
     "new flight visuals need explicit SavedVariable defaults")
-assert(adventure:find('text = "Skyriding Charge Jewels"', 1, true)
-    and adventure:find('text = "Cast Progress Arc"', 1, true),
+assert(main:find('WaffleHouseDB.flightIndicatorLayout = metadata', 1, true)
+    and main:find('and "compact" or "emblem"', 1, true),
+    "the owner install should see Radar Compact immediately without changing public defaults")
+assert(adventure:find('text = "Indicator Layout"', 1, true)
+    and adventure:find('compact = "Radar Compact"', 1, true),
+    "both flight-indicator layouts must be selectable in Adventure")
+assert(adventure:find('text = "Skyriding Charges"', 1, true)
+    and adventure:find('text = "Cast Progress"', 1, true),
     "both flight visuals must be configurable in Adventure")
 
 io.write("Adventure options tests passed\n")

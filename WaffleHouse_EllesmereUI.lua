@@ -168,6 +168,15 @@ local function GetSettings()
     if WaffleHouseDB.flightIndicatorSize ~= "small" and WaffleHouseDB.flightIndicatorSize ~= "large" then
         WaffleHouseDB.flightIndicatorSize = "medium"
     end
+    if WaffleHouseDB.flightIndicatorLayout ~= "emblem"
+        and WaffleHouseDB.flightIndicatorLayout ~= "compact" then
+        -- Show new compact layouts immediately on the author's local install;
+        -- keep the original presentation for public installs and saved choices.
+        local metadata = C_AddOns and C_AddOns.GetAddOnMetadata
+        WaffleHouseDB.flightIndicatorLayout = metadata
+            and metadata(ADDON_FOLDER, "X-WaffleHouse-FlightIndicatorDefault") == "1"
+            and "compact" or "emblem"
+    end
     if WaffleHouseDB.flightIndicatorCharges == nil then
         WaffleHouseDB.flightIndicatorCharges = true
     end

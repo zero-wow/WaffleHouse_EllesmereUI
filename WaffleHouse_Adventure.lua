@@ -496,7 +496,7 @@ function addon.BuildAdventurePage(parent, yOffset)
         {
             type = "toggle",
             text = "Show Flight Style Indicator",
-            tooltip = "Show an illustrated Skyriding or Steady Flight badge. Hold Shift and drag the badge to move it. Its transformation follows the live Switch Flight Style cast; an interrupted cast restores the original state. Charge jewels and cast progress can be toggled below. Off by default on public installs.",
+            tooltip = "Show Skyriding or Steady Flight status. Choose the illustrated emblem or the smaller Vignette Radar-inspired readout. Hold Shift and drag either layout to move it. An interrupted Switch Flight Style cast restores the original state. Off by default on public installs.",
             getValue = function()
                 return GetSettings().flightIndicatorEnabled == true
             end,
@@ -507,15 +507,44 @@ function addon.BuildAdventurePage(parent, yOffset)
         },
         {
             type = "dropdown",
+            text = "Indicator Layout",
+            values = { emblem = "Full Emblem", compact = "Radar Compact" },
+            order = { "emblem", "compact" },
+            tooltip = "Radar Compact is a small dark flight-state readout with charge dots and a cast-progress line. Each layout has its own Shift-drag position. Your local install starts with Radar Compact; public installs retain the full emblem when enabled.",
+            getValue = function()
+                return GetSettings().flightIndicatorLayout
+            end,
+            setValue = function(value)
+                GetSettings().flightIndicatorLayout = value
+                if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
+            end,
+        }
+    ); y = y - h
+
+    _, h = W:DualRow(parent, y,
+        {
+            type = "dropdown",
             text = "Indicator Size",
             values = { small = "Small", medium = "Medium", large = "Large" },
             order = { "small", "medium", "large" },
-            tooltip = "Size of the movable flight style emblem.",
+            tooltip = "Size of the selected flight-indicator layout.",
             getValue = function()
                 return GetSettings().flightIndicatorSize
             end,
             setValue = function(value)
                 GetSettings().flightIndicatorSize = value
+                if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
+            end,
+        },
+        {
+            type = "toggle",
+            text = "Skyriding Charges",
+            tooltip = "Show shared Surge Forward / Skyward Ascent charges as jewels around the full emblem or dots in Radar Compact. The next empty mark fills as its charge recovers. Charges hide in Steady Flight and whenever charge data is unavailable.",
+            getValue = function()
+                return GetSettings().flightIndicatorCharges ~= false
+            end,
+            setValue = function(value)
+                GetSettings().flightIndicatorCharges = value == true
                 if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
             end,
         }
@@ -524,20 +553,8 @@ function addon.BuildAdventurePage(parent, yOffset)
     _, h = W:DualRow(parent, y,
         {
             type = "toggle",
-            text = "Skyriding Charge Jewels",
-            tooltip = "Show the available shared Surge Forward / Skyward Ascent charges as six small jewels around the flight emblem. The next empty jewel fills as its charge recovers. The jewels hide in Steady Flight and whenever charge data is unavailable.",
-            getValue = function()
-                return GetSettings().flightIndicatorCharges ~= false
-            end,
-            setValue = function(value)
-                GetSettings().flightIndicatorCharges = value == true
-                if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
-            end,
-        },
-        {
-            type = "toggle",
-            text = "Cast Progress Arc",
-            tooltip = "Show a subtle inner arc tracking the actual Switch Flight Style cast. It vanishes when the cast completes or is interrupted.",
+            text = "Cast Progress",
+            tooltip = "Show the full emblem's subtle cast arc or Radar Compact's thin progress line. It vanishes when the cast completes or is interrupted.",
             getValue = function()
                 return GetSettings().flightIndicatorCastProgress ~= false
             end,
@@ -545,7 +562,7 @@ function addon.BuildAdventurePage(parent, yOffset)
                 GetSettings().flightIndicatorCastProgress = value == true
                 if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
             end,
-        }
+        }, nil
     ); y = y - h
 
     _, h = W:SectionHeader(parent, "DELVE COMPANION", y); y = y - h

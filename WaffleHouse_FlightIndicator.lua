@@ -50,8 +50,14 @@ local SWITCH_SPELLS = { [436854] = true, [460002] = true, [460003] = true }
 -- Try both because one may not be available until the player mounts.
 local CHARGE_SPELLS = { 372608, 372610 }
 local SIZES = { small = 76, medium = 104, large = 132 }
+local COMPACT_SIZES = {
+    small = { 90, 36 }, medium = { 104, 40 }, large = { 118, 44 },
+}
 local DEFAULT_X, DEFAULT_Y = 0, 180
 local WHITE = "Interface\\Buttons\\WHITE8X8"
+local CIRCLE = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+local RADAR_R, RADAR_G, RADAR_B = 0.05, 0.82, 0.62
+local RADAR_DEFAULT_RIGHT, RADAR_DEFAULT_CENTER_FROM_TOP, RADAR_GAP = 170, 202, 8
 local GEM_ANGLES = { 30, 90, 150, 210, 270, 330 }
 local CAST_TICKS = 12
 
@@ -139,8 +145,16 @@ local function PositionBadge(settings)
     local height = UIParent:GetHeight() or 0
     local xLimit = math.max(0, (width - badge:GetWidth()) / 2)
     local yLimit = math.max(0, (height - badge:GetHeight()) / 2)
-    local x = tonumber(settings.flightIndicatorX) or DEFAULT_X
-    local y = tonumber(settings.flightIndicatorY) or DEFAULT_Y
+    local compact = badge.layout == "compact"
+    -- Sit just to the right of Vignette Radar's default top-left launcher.
+    -- The independent saved position takes over as soon as this is dragged.
+    local defaultX = compact and (-width / 2 + RADAR_DEFAULT_RIGHT
+        + RADAR_GAP + badge:GetWidth() / 2) or DEFAULT_X
+    local defaultY = compact and (height / 2 - RADAR_DEFAULT_CENTER_FROM_TOP) or DEFAULT_Y
+    local x = tonumber(settings[compact and "flightIndicatorCompactX" or "flightIndicatorX"])
+        or defaultX
+    local y = tonumber(settings[compact and "flightIndicatorCompactY" or "flightIndicatorY"])
+        or defaultY
     x = math.max(-xLimit, math.min(xLimit, x))
     y = math.max(-yLimit, math.min(yLimit, y))
     badge:ClearAllPoints()
@@ -169,6 +183,29 @@ local function PositionOrnaments()
     end
 end
 
+local function PositionCompact()
+    if badge.layout ~= "compact" then return end
+    local compact = badge.compact
+    local width, height = badge:GetWidth(), badge:GetHeight()
+    compact.dial:SetSize(height - 4, height - 4)
+    compact.face:SetSize(height - 8, height - 8)
+    compact.icon:SetSize(height - 9, height - 9)
+    compact.label:ClearAllPoints()
+    compact.label:SetPoint("TOPLEFT", badge, "TOPLEFT", height + 3, -6)
+    compact.label:SetWidth(width - height - 7)
+    for index, pip in ipairs(compact.pips) do
+        pip:ClearAllPoints()
+        pip:SetPoint("BOTTOMLEFT", badge, "BOTTOMLEFT",
+            height + 5 + (index - 1) * 8, 8)
+    end
+    compact.track:SetSize(width - 6, 2)
+    compact.fill:SetSize(width - 6, 2)
+    compact.edges.top:SetSize(width, 1)
+    compact.edges.bottom:SetSize(width, 1)
+    compact.edges.left:SetSize(1, height)
+    compact.edges.right:SetSize(1, height)
+end
+
 local function CreateBadge()
     badge = CreateFrame("Frame", "WaffleHouseFlightIndicator", UIParent)
     badge:SetSize(SIZES.medium, SIZES.medium)
@@ -193,8 +230,67 @@ local function CreateBadge()
     badge.original:SetAllPoints()
     badge.original:SetAlpha(0)
 
-    -- The painting remains the hero. Small inlaid jewels indicate the shared
-    -- charge pool; an inner set of restrained ticks appears only while casting.
+    -- Radar Compact is an independent, low-profile readout. It reuses the
+    -- authored creature endpoints without carrying over the ornate frame.
+    local compact = {}
+    badge.compact = compact
+    compact.surface = badge:CreateTexture(nil, "BACKGROUND")
+    compact.surface:SetAllPoints()
+    compact.surface:SetTexture(WHITE)
+    compact.surface:SetVertexColor(0.015, 0.022, 0.028)
+    compact.surface:SetAlpha(0)
+    compact.edges = {}
+    for _, edge in ipairs({ "top", "bottom", "left", "right" }) do
+        local texture = badge:CreateTexture(nil, "BORDER")
+        texture:SetTexture(WHITE)
+        texture:SetVertexColor(RADAR_R, RADAR_G, RADAR_B)
+        texture:SetAlpha(0)
+        compact.edges[edge] = texture
+    end
+    compact.edges.top:SetPoint("TOPLEFT", badge, "TOPLEFT")
+    compact.edges.bottom:SetPoint("BOTTOMLEFT", badge, "BOTTOMLEFT")
+    compact.edges.left:SetPoint("TOPLEFT", badge, "TOPLEFT")
+    compact.edges.right:SetPoint("TOPRIGHT", badge, "TOPRIGHT")
+    compact.dial = badge:CreateTexture(nil, "ARTWORK")
+    compact.dial:SetTexture(CIRCLE)
+    compact.dial:SetVertexColor(RADAR_R, RADAR_G, RADAR_B)
+    compact.dial:SetPoint("LEFT", badge, "LEFT", 2, 0)
+    compact.dial:SetAlpha(0)
+    compact.face = badge:CreateTexture(nil, "ARTWORK", nil, 1)
+    compact.face:SetTexture(CIRCLE)
+    compact.face:SetVertexColor(0.018, 0.055, 0.061)
+    compact.face:SetPoint("CENTER", compact.dial, "CENTER")
+    compact.face:SetAlpha(0)
+    compact.icon = badge:CreateTexture(nil, "ARTWORK", nil, 2)
+    compact.icon:SetPoint("CENTER", compact.dial, "CENTER")
+    compact.icon:SetAlpha(0)
+    compact.label = badge:CreateFontString(nil, "OVERLAY")
+    compact.label:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 10, "OUTLINE")
+    compact.label:SetJustifyH("LEFT")
+    compact.label:SetTextColor(0.78, 0.90, 0.88)
+    compact.label:SetAlpha(0)
+    compact.pips = {}
+    for index = 1, #GEM_ANGLES do
+        local pip = badge:CreateTexture(nil, "OVERLAY")
+        pip:SetTexture(CIRCLE)
+        pip:SetSize(5, 5)
+        pip:SetVertexColor(RADAR_R, RADAR_G, RADAR_B)
+        pip:SetAlpha(0)
+        compact.pips[index] = pip
+    end
+    compact.track = badge:CreateTexture(nil, "OVERLAY")
+    compact.track:SetTexture(WHITE)
+    compact.track:SetVertexColor(RADAR_R, RADAR_G, RADAR_B)
+    compact.track:SetPoint("BOTTOMLEFT", badge, "BOTTOMLEFT", 3, 3)
+    compact.track:SetAlpha(0)
+    compact.fill = badge:CreateTexture(nil, "OVERLAY", nil, 1)
+    compact.fill:SetTexture(WHITE)
+    compact.fill:SetVertexColor(RADAR_R, RADAR_G, RADAR_B)
+    compact.fill:SetPoint("BOTTOMLEFT", badge, "BOTTOMLEFT", 3, 3)
+    compact.fill:SetAlpha(0)
+
+    -- In the full emblem, inlaid jewels show the shared charge pool; the
+    -- smaller readout uses its separate six-dot row instead.
     badge.chargeGems = {}
     for index = 1, #GEM_ANGLES do
         local gem = {}
@@ -253,13 +349,52 @@ local function CreateBadge()
         local parentX, parentY = UIParent:GetCenter()
         if not (x and y and parentX and parentY) then return end
         local settings = addon.GetSettings()
-        settings.flightIndicatorX = math.floor(x - parentX + 0.5)
-        settings.flightIndicatorY = math.floor(y - parentY + 0.5)
+        local key = self.layout == "compact" and "flightIndicatorCompact" or "flightIndicator"
+        settings[key .. "X"] = math.floor(x - parentX + 0.5)
+        settings[key .. "Y"] = math.floor(y - parentY + 0.5)
         PositionBadge(settings)
     end)
     badge:SetScript("OnHide", function(self)
         self:StopMovingOrSizing()
     end)
+end
+
+local function ShowCompactStyle(style)
+    local compact = badge.compact
+    local path = style == "steady" and CREATURE[#CREATURE] or CREATURE[1]
+    if compact.iconPath ~= path then
+        compact.icon:SetTexture(path)
+        compact.iconPath = path
+    end
+    compact.icon:SetAlpha(badge.layout == "compact" and 1 or 0)
+    compact.label:SetText(style == "steady" and "STEADY" or "SKYRIDE")
+end
+
+local function SetCompactVisibility(enabled)
+    local compact = badge.compact
+    compact.surface:SetAlpha(enabled and 0.90 or 0)
+    for _, edge in pairs(compact.edges) do edge:SetAlpha(enabled and 0.38 or 0) end
+    compact.dial:SetAlpha(enabled and 0.55 or 0)
+    compact.face:SetAlpha(enabled and 1 or 0)
+    compact.icon:SetAlpha(enabled and 1 or 0)
+    compact.label:SetAlpha(enabled and 1 or 0)
+    if not enabled then
+        for _, pip in ipairs(compact.pips) do pip:SetAlpha(0) end
+        compact.track:SetAlpha(0)
+        compact.fill:SetAlpha(0)
+    end
+    badge.icon:SetAlpha(enabled and 0 or 1)
+    if enabled then
+        badge.blend:SetAlpha(0)
+        badge.creature:SetAlpha(0)
+        badge.original:SetAlpha(0)
+        for _, tick in ipairs(badge.castTicks) do tick:SetAlpha(0) end
+        for _, gem in ipairs(badge.chargeGems) do
+            gem.glow:SetAlpha(0)
+            gem.bezel:SetAlpha(0)
+            gem.core:SetAlpha(0)
+        end
+    end
 end
 
 local function HideChargeGems()
@@ -268,11 +403,20 @@ local function HideChargeGems()
         gem.bezel:SetAlpha(0)
         gem.core:SetAlpha(0)
     end
+    for _, pip in ipairs(badge.compact.pips) do pip:SetAlpha(0) end
 end
 
 local function RenderCastProgress(progress)
     local settings = addon.GetSettings and addon.GetSettings()
     local enabled = not settings or settings.flightIndicatorCastProgress ~= false
+    if badge.layout == "compact" then
+        local compact = badge.compact
+        compact.track:SetAlpha(enabled and 0.24 or 0)
+        compact.fill:SetSize(math.max(1, (badge:GetWidth() - 6) * progress), 2)
+        compact.fill:SetAlpha(enabled and 0.95 or 0)
+        for _, tick in ipairs(badge.castTicks) do tick:SetAlpha(0) end
+        return
+    end
     for index, tick in ipairs(badge.castTicks) do
         local filled = Clamp01(progress * CAST_TICKS - index + 1)
         tick:SetAlpha(enabled and (0.10 + 0.72 * filled) or 0)
@@ -281,6 +425,8 @@ end
 
 local function HideCastProgress()
     for _, tick in ipairs(badge.castTicks) do tick:SetAlpha(0) end
+    badge.compact.track:SetAlpha(0)
+    badge.compact.fill:SetAlpha(0)
 end
 
 local function RenderChargeGems()
@@ -297,6 +443,20 @@ local function RenderChargeGems()
     end
     local pulse = Clamp01(1 - (now - (badge.chargePulseAt or -100)) / 0.35)
     local takeoff = Clamp01(1 - (now - (badge.takeoffAt or -100)) / 0.45)
+    if badge.layout == "compact" then
+        for index, pip in ipairs(badge.compact.pips) do
+            if index <= state.maximum then
+                local fill = index <= state.count and 1
+                    or (index == state.count + 1 and refill or 0)
+                local flash = index == badge.chargePulseIndex and pulse or 0
+                pip:SetAlpha((0.18 + 0.64 * fill + 0.18 * flash
+                    + 0.12 * takeoff) * reveal)
+            else
+                pip:SetAlpha(0)
+            end
+        end
+        return
+    end
     for index, gem in ipairs(badge.chargeGems) do
         if index <= state.maximum then
             local fill = index <= state.count and 1
@@ -388,6 +548,7 @@ local function ShowStaticStyle(style)
     badge.original:SetAlpha(0)
     HideCastProgress()
     badge.style = style
+    ShowCompactStyle(style)
     badge:Show()
     SyncChargeMode()
 end
@@ -400,7 +561,7 @@ local function UpdateState()
         -- A success/aura event can arrive before the visual cast clock ends.
         -- Keep the dragon-to-bird morph running for the whole measured cast.
         if style == animation.to and animation.completed
-            and (animation.from ~= "skyriding"
+            and ((animation.from ~= "skyriding" and badge.layout ~= "compact")
                 or GetTime() >= animation.startTime + animation.duration) then
             ShowStaticStyle(style)
         end
@@ -419,6 +580,21 @@ local function RenderTransition()
     local progress = Clamp01(
         (GetTime() - animation.startTime) / animation.duration)
     RenderCastProgress(progress)
+
+    if badge.layout == "compact" then
+        -- The tiny readout favors an unmistakable state over a crowded
+        -- two-headed miniature morph. Its bar carries the full cast while
+        -- the silhouette fades to the new state at the end.
+        if progress < 0.90 then
+            ShowCompactStyle(animation.from)
+            badge.compact.icon:SetAlpha(1 - SmoothStep((progress - 0.82) / 0.08))
+        else
+            ShowCompactStyle(animation.to)
+            badge.compact.icon:SetAlpha(SmoothStep((progress - 0.90) / 0.10))
+        end
+        if progress >= 1 and animation.completed then UpdateState() end
+        return
+    end
 
     -- Keep the authored full emblems in this direction. Do not use the
     -- reverse-direction cutout morph here: its intermediate images
@@ -574,15 +750,21 @@ function addon.RefreshFlightIndicator()
     end
 
     if not badge then CreateBadge() end
+    badge.layout = settings.flightIndicatorLayout == "compact" and "compact" or "emblem"
     local size = SIZES[settings.flightIndicatorSize] or SIZES.medium
-    badge:SetSize(size, size)
+    local compactSize = COMPACT_SIZES[settings.flightIndicatorSize] or COMPACT_SIZES.medium
+    badge:SetSize(badge.layout == "compact" and compactSize[1] or size,
+        badge.layout == "compact" and compactSize[2] or size)
     badge.creature:SetSize(size * 0.90, size * 0.90)
     PositionOrnaments()
+    PositionCompact()
     PositionBadge(settings)
     badge:EnableMouse(IsShiftKeyDown())
+    SetCompactVisibility(badge.layout == "compact")
 
-    UpdateState()
+    if animation then RenderTransition() else UpdateState() end
     if badge.style then
+        if not animation then ShowCompactStyle(badge.style) end
         badge:Show()
         SyncChargeMode()
     else
