@@ -158,6 +158,16 @@ local function GetSettings()
     if WaffleHouseDB.autoMountAfterCombat == nil then
         WaffleHouseDB.autoMountAfterCombat = false
     end
+    if WaffleHouseDB.flightIndicatorEnabled == nil then
+        -- Public installs default off. The author's local deployment may set
+        -- a TOC-only opt-in; the resulting SavedVariable remains user-editable.
+        local metadata = C_AddOns and C_AddOns.GetAddOnMetadata
+        WaffleHouseDB.flightIndicatorEnabled = metadata
+            and metadata(ADDON_FOLDER, "X-WaffleHouse-FlightIndicatorDefault") == "1" or false
+    end
+    if WaffleHouseDB.flightIndicatorSize ~= "small" and WaffleHouseDB.flightIndicatorSize ~= "large" then
+        WaffleHouseDB.flightIndicatorSize = "medium"
+    end
     if WaffleHouseDB.autoMountProvider ~= "litemount" and WaffleHouseDB.autoMountProvider ~= "wow" then
         WaffleHouseDB.autoMountProvider = "auto"
     end

@@ -3,6 +3,7 @@
 ## Notes: Vendor bag enhancements, party and raid buff checks, and opt-in quest, dialogue, cinematic, and merchant automation for EllesmereUI.
 ## Author: Zero
 ## Version: 0.1.0-dev.1
+## X-WaffleHouse-FlightIndicatorDefault: 0
 ## Dependencies: EllesmereUI, EllesmereUIVendorBag
 ## OptionalDeps: EllesmereUIBlizzardSkin, ZygorGuidesViewer, EllesmereUIDataBars, EllesmereUIBags, LiteMount
 ## SavedVariables: WaffleHouseDB, EllesmereUI_WaffleHouseDB, EllesmereUI_QoLDB
@@ -12,6 +13,7 @@ WaffleHouse_EllesmereUI.lua
 WaffleHouse_VendorOptions.lua
 WaffleHouse_VendorStack.lua
 WaffleHouse_AutoMount.lua
+WaffleHouse_FlightIndicator.lua
 WaffleHouse_ResourceWatch.lua
 WaffleHouse_CVarProtector.lua
 WaffleHouse_Adventure.lua

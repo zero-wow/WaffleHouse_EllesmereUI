@@ -491,6 +491,36 @@ function addon.BuildAdventurePage(parent, yOffset)
         ); y = y - h
     end
 
+    _, h = W:SectionHeader(parent, "FLIGHT STYLE INDICATOR", y); y = y - h
+    _, h = W:DualRow(parent, y,
+        {
+            type = "toggle",
+            text = "Show Flight Style Indicator",
+            tooltip = "Show an illustrated Skyriding or Steady Flight badge. Hold Shift and drag the badge to move it. The five-second transformation follows the Switch Flight Style cast; an interrupted cast restores the original state. Off by default on public installs.",
+            getValue = function()
+                return GetSettings().flightIndicatorEnabled == true
+            end,
+            setValue = function(value)
+                GetSettings().flightIndicatorEnabled = value == true
+                if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
+            end,
+        },
+        {
+            type = "dropdown",
+            text = "Indicator Size",
+            values = { small = "Small", medium = "Medium", large = "Large" },
+            order = { "small", "medium", "large" },
+            tooltip = "Size of the movable flight style emblem.",
+            getValue = function()
+                return GetSettings().flightIndicatorSize
+            end,
+            setValue = function(value)
+                GetSettings().flightIndicatorSize = value
+                if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
+            end,
+        }
+    ); y = y - h
+
     _, h = W:SectionHeader(parent, "DELVE COMPANION", y); y = y - h
     _, h = W:DualRow(parent, y,
         {
