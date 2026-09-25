@@ -71,11 +71,25 @@ local function NewFrame(name)
         function texture:ClearAllPoints() end
         function texture:SetSize(w, h) self.width, self.height = w, h end
         function texture:SetTexture(path) self.path = path end
+        function texture:SetTexCoord(...) self.texCoord = { ... } end
         function texture:SetBlendMode(mode) self.blendMode = mode end
         function texture:SetRotation(angle) self.angle = angle end
         function texture:SetAlpha(alpha) self.alpha = alpha end
         function texture:SetVertexColor(r, g, b) self.r, self.g, self.b = r, g, b end
         return texture
+    end
+    function f:CreateFontString()
+        local label = { shown = true }
+        function label:SetPoint(_, _, _, x, y) self.x, self.y = x, y end
+        function label:ClearAllPoints() end
+        function label:SetWidth(width) self.width = width end
+        function label:SetFont(path, size) self.font, self.fontSize = path, size end
+        function label:SetTextColor() end
+        function label:SetJustifyH() end
+        function label:SetText(value) self.text = value end
+        function label:Show() self.shown = true end
+        function label:Hide() self.shown = false end
+        return label
     end
     return f
 end
@@ -133,7 +147,7 @@ for gap = 1, 19 do
         file:close()
     end
 end
-for _, name in ipairs({ "empty-skyriding.png", "empty-steady.png" }) do
+for _, name in ipairs({ "empty-skyriding.png", "empty-steady.png", "compact-housing.png" }) do
     local path = "Media/FlightStyle/" .. name
     local file = assert(io.open(path, "rb"), "missing animation effect " .. path)
     file:close()
@@ -379,22 +393,32 @@ ornamentsFit("large")
 settings.flightIndicatorLayout = "compact"
 settings.flightIndicatorSize = "medium"
 addon.RefreshFlightIndicator()
-assert(badge.width == 60 and badge.height == 60
-    and badge.x == -752 and badge.y == 338,
-    "Mini Emblem should sit beside the default radar launcher")
-assert(badge.icon.path:find("flight%-16%.png") and not badge.compact,
-    "Mini Emblem must use the exact full-emblem art without a separate panel")
-for size, pixels in pairs({ small = 48, medium = 60, large = 72 }) do
+assert(badge.width == 158 and badge.height == 56
+    and badge.x == -703 and badge.y == 338,
+    "rounded compact view should sit beside the default radar launcher")
+assert(badge.housing.path:find("compact%-housing%.png")
+    and badge.housing.alpha == 1 and badge.icon.path:find("flight%-16%.png")
+    and badge.label.shown and badge.label.text == "STEADY FLIGHT",
+    "compact view must have a separate rounded housing, live art, and state text")
+assert(badge.icon.x < 0 and badge.icon.width < badge.height
+    and badge.housing.sublevel > badge.icon.sublevel,
+    "the creature medallion must project from the left side of the capsule")
+for size, dimensions in pairs({ small = { 132, 48 }, medium = { 158, 56 }, large = { 184, 66 } }) do
     settings.flightIndicatorSize = size
     addon.RefreshFlightIndicator()
-    assert(badge.width == pixels and badge.height == pixels,
-        "Mini Emblem size must scale the authored art at " .. size)
-    local half = pixels / 2
+    assert(badge.width == dimensions[1] and badge.height == dimensions[2],
+        "rounded compact size must scale the authored housing at " .. size)
+    assert(badge.label.x + badge.label.width <= badge.width - 5
+        and badge.label.fontSize <= badge.height * 0.2 + 1,
+        "compact state text must keep a readable inner gutter at " .. size)
+    if size == "small" then
+        assert(badge.label.text == "STEADY", "small size needs a short, unclipped state label")
+    end
     for _, gem in ipairs(badge.chargeGems) do
         local diamondHalf = gem.glow.width * math.sqrt(2) / 2
-        assert(math.abs(gem.glow.x) + diamondHalf <= half + 0.001
-            and math.abs(gem.glow.y) + diamondHalf <= half + 0.001,
-            "miniature charge jewels must fit inside the " .. size .. " emblem")
+        assert(math.abs(gem.glow.x) + diamondHalf <= badge.width / 2 + 0.001
+            and math.abs(gem.glow.y) + diamondHalf <= badge.height / 2 + 0.001,
+            "compact charge jewels must fit inside the " .. size .. " housing")
     end
 end
 settings.flightIndicatorSize = "medium"
@@ -405,13 +429,13 @@ UIParent.GetWidth = function() return 640 end
 UIParent.GetHeight = function() return 480 end
 UIParent.GetCenter = function() return 320, 240 end
 addon.RefreshFlightIndicator()
-assert(badge.x == -112 and badge.y == 38,
-    "Mini Emblem's default must stay beside the launcher on a small screen")
+assert(badge.x == -63 and badge.y == 38,
+    "compact default must stay beside the launcher on a small screen")
 settings.flightIndicatorCompactX, settings.flightIndicatorCompactY = -1000, 1000
 addon.RefreshFlightIndicator()
 assert(math.abs(badge.x) <= (640 - badge.width) / 2
     and math.abs(badge.y) <= (480 - badge.height) / 2,
-    "a dragged Mini Emblem must remain on a small screen")
+    "a dragged compact view must remain on a small screen")
 UIParent.GetWidth, UIParent.GetHeight, UIParent.GetCenter =
     originalWidth, originalHeight, originalCenter
 settings.flightIndicatorCompactX, settings.flightIndicatorCompactY = nil, nil
@@ -421,16 +445,17 @@ event("MODIFIER_STATE_CHANGED")
 badge.x, badge.y = -400, 300
 badge.scripts.OnDragStop(badge)
 assert(settings.flightIndicatorCompactX == -400 and settings.flightIndicatorCompactY == 300,
-    "Mini Emblem Shift-drag must save an independent position")
+    "compact Shift-drag must save an independent position")
 settings.flightIndicatorLayout = "emblem"
 addon.RefreshFlightIndicator()
 assert(badge.x == 110 and badge.y == -80 and badge.width == 104
-    and badge.icon.path:find("flight%-16%.png"),
+    and badge.icon.path:find("flight%-16%.png") and badge.housing.alpha == 0
+    and not badge.label.shown,
     "switching back must restore the full emblem and its own position")
 settings.flightIndicatorLayout = "compact"
 addon.RefreshFlightIndicator()
-assert(badge.x == -400 and badge.y == 300 and badge.width == 60,
-    "returning to Mini Emblem must restore its saved position")
+assert(badge.x == -400 and badge.y == 300 and badge.width == 158,
+    "returning to rounded compact must restore its saved position")
 shift = false
 event("MODIFIER_STATE_CHANGED")
 
@@ -440,7 +465,8 @@ event("UNIT_AURA", "player")
 advance(0.3)
 assert(badge.icon.path:find("flight%-01%.png")
     and badge.chargeGems[1].core.alpha > 0,
-    "Mini Emblem Skyriding must retain the original dragon art and charge jewels")
+    "rounded compact Skyriding must retain the dragon art and charge jewels")
+assert(badge.label.text == "SKYRIDING", "compact text must track the flight style")
 settings.flightIndicatorCharges = false
 addon.RefreshFlightIndicator()
 assert(badge.chargeGems[1].core.alpha == 0,
@@ -456,31 +482,31 @@ assert(badge.castTicks[6].alpha > badge.castTicks[7].alpha
     and badge.icon.path:find("flight%-05%.png")
     and badge.blend.path:find("flight%-06%.png")
     and badge.chargeGems[1].core.alpha == 0,
-    "Mini Emblem must retain the full morph and cast arc at reduced scale")
+    "rounded compact must retain the full morph and cast progress")
 advance(1.5)
 aura = true
 event("UNIT_SPELLCAST_SUCCEEDED", "player", "compact-forward", 436854)
 assert(badge.scripts.OnUpdate and badge.style == "skyriding",
-    "an early success must not shorten Mini Emblem's morph")
+    "an early success must not shorten the compact morph")
 advance(1)
 assert(badge.style == "steady" and badge.icon.path:find("flight%-16%.png")
     and badge.castTicks[1].alpha == 0,
-    "Mini Emblem must settle on the original steady art at cast completion")
+    "rounded compact must settle on the steady art at cast completion")
 event("UNIT_SPELLCAST_START", "player", "compact-reverse", 460003)
 advance(2.5)
 assert(badge.creature.alpha > 0 and badge.castTicks[6].alpha > 0,
-    "the miniature reverse cast must show the same creature morph and arc")
+    "the compact reverse cast must show the same creature morph and progress")
 advance(2.5)
 aura = nil
 event("UNIT_SPELLCAST_SUCCEEDED", "player", "compact-reverse", 460003)
 assert(badge.style == "skyriding" and badge.icon.path:find("flight%-01%.png"),
-    "the miniature reverse cast must settle on the original dragon art")
+    "the compact reverse cast must settle on the original dragon art")
 
 settings.flightIndicatorCastProgress = false
 event("UNIT_SPELLCAST_START", "player", "compact-no-bar", 460002)
 advance(0.5)
 assert(badge.castTicks[1].alpha == 0,
-    "the cast-progress option must also control Mini Emblem")
+    "the cast-progress option must also control rounded compact")
 event("UNIT_SPELLCAST_INTERRUPTED", "player", "compact-no-bar", 460002)
 settings.flightIndicatorCastProgress = true
 

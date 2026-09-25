@@ -50,7 +50,12 @@ local SWITCH_SPELLS = { [436854] = true, [460002] = true, [460003] = true }
 -- Try both because one may not be available until the player mounts.
 local CHARGE_SPELLS = { 372608, 372610 }
 local SIZES = { small = 76, medium = 104, large = 132 }
-local COMPACT_SIZES = { small = 48, medium = 60, large = 72 }
+-- A purpose-built horizontal housing: its left medallion rises past the
+-- capsule edge, while the text and six charge jewels occupy the sky to right.
+local COMPACT_SIZES = {
+    small = { 132, 48 }, medium = { 158, 56 }, large = { 184, 66 },
+}
+local COMPACT_HOUSING = ART_ROOT .. "compact-housing.png"
 local DEFAULT_X, DEFAULT_Y = 0, 180
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local RADAR_DEFAULT_RIGHT, RADAR_DEFAULT_CENTER_FROM_TOP, RADAR_GAP = 170, 202, 8
@@ -159,6 +164,29 @@ end
 
 local function PositionOrnaments()
     local size = badge:GetWidth()
+    if badge.layout == "compact" then
+        local width, height = badge:GetWidth(), badge:GetHeight()
+        local left = -width / 2 + height * 1.16
+        local step = (width - height * 1.16 - 15) / 5
+        local y = -height * 0.17
+        for index, gem in ipairs(badge.chargeGems) do
+            for _, part in ipairs({ gem.glow, gem.bezel, gem.core }) do
+                part:ClearAllPoints()
+                part:SetPoint("CENTER", badge, "CENTER", left + (index - 1) * step, y)
+            end
+            gem.glow:SetSize(height * 0.13, height * 0.13)
+            gem.bezel:SetSize(height * 0.105, height * 0.105)
+            gem.core:SetSize(height * 0.067, height * 0.067)
+        end
+        for index, tick in ipairs(badge.castTicks) do
+            tick:ClearAllPoints()
+            tick:SetPoint("CENTER", badge, "CENTER",
+                left + (index - 1) * step * 5 / (CAST_TICKS - 1), y)
+            tick:SetSize(height * 0.075, height * 0.036)
+            tick:SetRotation(0)
+        end
+        return
+    end
     for index, gem in ipairs(badge.chargeGems) do
         local angle = math.rad(GEM_ANGLES[index])
         local x, y = size * 0.43 * math.cos(angle), size * 0.43 * math.sin(angle)
@@ -176,6 +204,42 @@ local function PositionOrnaments()
         tick:SetPoint("CENTER", badge, "CENTER",
             size * 0.32 * math.cos(angle), size * 0.32 * math.sin(angle))
         tick:SetSize(math.max(1, size * 0.017), size * 0.052)
+    end
+end
+
+local function SetStyleLabel(style)
+    if not (badge and badge.label and style) then return end
+    local steady = badge.layout == "compact" and badge:GetHeight() <= 48
+        and "STEADY" or "STEADY FLIGHT"
+    badge.label:SetText(style == "steady" and steady or "SKYRIDING")
+end
+
+local function PositionArtwork()
+    local compact = badge.layout == "compact"
+    local width, height = badge:GetWidth(), badge:GetHeight()
+    local artSize = compact and height * 0.82 or width
+    local artX = compact and (-width / 2 + height * 0.56) or 0
+    for _, texture in ipairs({ badge.icon, badge.blend, badge.original }) do
+        texture:ClearAllPoints()
+        texture:SetSize(artSize, artSize)
+        texture:SetPoint("CENTER", badge, "CENTER", artX, 0)
+    end
+    badge.creature:ClearAllPoints()
+    badge.creature:SetPoint("CENTER", badge, "CENTER", artX, 0)
+    badge.creature:SetSize(artSize * 0.90, artSize * 0.90)
+    badge.artSize = artSize
+    badge.housing:SetAlpha(compact and 1 or 0)
+    if compact then
+        badge.label:ClearAllPoints()
+        badge.label:SetPoint("TOPLEFT", badge, "TOPLEFT", height * 1.07, -height * 0.33)
+        badge.label:SetWidth(width - height * 1.07 - 9)
+        badge.label:SetFont((EllesmereUI and EllesmereUI.GetFontPath
+            and EllesmereUI.GetFontPath("extras")) or STANDARD_TEXT_FONT
+            or "Fonts\\FRIZQT__.TTF", math.floor(height * 0.195 + 0.5), "OUTLINE")
+        SetStyleLabel(animation and animation.to or badge.style)
+        badge.label:Show()
+    else
+        badge.label:Hide()
     end
 end
 
@@ -203,8 +267,20 @@ local function CreateBadge()
     badge.original:SetAllPoints()
     badge.original:SetAlpha(0)
 
-    -- Both layouts share the same art, charge jewels, and cast arc; compact
-    -- only changes the scale and remembers an independent position.
+    badge.housing = badge:CreateTexture(nil, "ARTWORK", nil, 3)
+    badge.housing:SetAllPoints()
+    badge.housing:SetTexture(COMPACT_HOUSING)
+    -- The source is padded to power-of-two dimensions. Crop only the empty
+    -- vertical canvas so the illustrated capsule retains its rounded edge.
+    badge.housing:SetTexCoord(0, 1, 0.15, 0.85)
+    badge.housing:SetAlpha(0)
+    badge.label = badge:CreateFontString(nil, "OVERLAY")
+    badge.label:SetTextColor(1, 0.87, 0.58, 1)
+    badge.label:SetJustifyH("LEFT")
+    badge.label:Hide()
+
+    -- The same flight paintings and creature morph run inside the raised
+    -- medallion; compact only changes their layout, not the cast sequence.
     badge.chargeGems = {}
     for index = 1, #GEM_ANGLES do
         local gem = {}
@@ -314,8 +390,13 @@ local function RenderChargeGems()
                 or (index == state.count + 1 and refill or 0)
             local flash = index == badge.chargePulseIndex and pulse or 0
             gem.bezel:SetAlpha(0.88 * reveal)
-            gem.core:SetVertexColor(0.08 + 0.20 * fill,
-                0.22 + 0.68 * fill, 0.31 + 0.69 * fill)
+            if badge.layout == "compact" then
+                gem.core:SetVertexColor(0.42 + 0.58 * fill,
+                    0.29 + 0.57 * fill, 0.12 + 0.44 * fill)
+            else
+                gem.core:SetVertexColor(0.08 + 0.20 * fill,
+                    0.22 + 0.68 * fill, 0.31 + 0.69 * fill)
+            end
             gem.core:SetAlpha((0.64 + 0.36 * fill) * reveal)
             gem.glow:SetAlpha((0.12 * fill + 0.42 * flash
                 + 0.24 * takeoff) * reveal)
@@ -399,6 +480,7 @@ local function ShowStaticStyle(style)
     badge.original:SetAlpha(0)
     HideCastProgress()
     badge.style = style
+    SetStyleLabel(style)
     badge:Show()
     SyncChargeMode()
 end
@@ -500,7 +582,7 @@ local function RenderTransition()
     -- The original endpoint paintings use a smaller bird than dragon. Match
     -- those silhouettes so the final handoff does not visibly pop in size.
     local morphProgress = (position - 1) / (#CREATURE - 1)
-    local creatureSize = badge:GetWidth() * (0.90 - 0.12 * morphProgress)
+    local creatureSize = badge.artSize * (0.90 - 0.12 * morphProgress)
     badge.creature:SetSize(creatureSize, creatureSize)
 
     local originalAlpha = progress < 0.06 and (1 - SmoothStep(progress / 0.06))
@@ -532,6 +614,7 @@ local function StartStyleCast(castGUID)
         startTime = startTime,
         duration = duration,
     }
+    SetStyleLabel(animation.to)
     badge.chargeTicker:Hide()
     HideChargeGems()
     badge:SetScript("OnUpdate", RenderTransition)
@@ -588,8 +671,12 @@ function addon.RefreshFlightIndicator()
     badge.layout = settings.flightIndicatorLayout == "compact" and "compact" or "emblem"
     local sizes = badge.layout == "compact" and COMPACT_SIZES or SIZES
     local size = sizes[settings.flightIndicatorSize] or sizes.medium
-    badge:SetSize(size, size)
-    badge.creature:SetSize(size * 0.90, size * 0.90)
+    if badge.layout == "compact" then
+        badge:SetSize(size[1], size[2])
+    else
+        badge:SetSize(size, size)
+    end
+    PositionArtwork()
     PositionOrnaments()
     PositionBadge(settings)
     badge:EnableMouse(IsShiftKeyDown())

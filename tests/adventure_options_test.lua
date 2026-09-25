@@ -28,9 +28,9 @@ assert(main:find('WaffleHouseDB.flightIndicatorCharges = true', 1, true)
     "new flight visuals need explicit SavedVariable defaults")
 assert(main:find('WaffleHouseDB.flightIndicatorLayout = metadata', 1, true)
     and main:find('and "compact" or "emblem"', 1, true),
-    "the owner install should see Mini Emblem immediately without changing public defaults")
+    "the owner install should see Rounded Compact immediately without changing public defaults")
 assert(adventure:find('text = "Indicator Layout"', 1, true)
-    and adventure:find('compact = "Mini Emblem"', 1, true),
+    and adventure:find('compact = "Rounded Compact"', 1, true),
     "both flight-indicator layouts must be selectable in Adventure")
 assert(adventure:find('text = "Skyriding Charges"', 1, true)
     and adventure:find('text = "Cast Progress"', 1, true),

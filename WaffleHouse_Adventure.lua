@@ -508,9 +508,9 @@ function addon.BuildAdventurePage(parent, yOffset)
         {
             type = "dropdown",
             text = "Indicator Layout",
-            values = { emblem = "Full Emblem", compact = "Mini Emblem" },
+            values = { emblem = "Full Emblem", compact = "Rounded Compact" },
             order = { "emblem", "compact" },
-            tooltip = "Mini Emblem uses the same illustrated frame, creature morph, charge jewels, and cast arc at a much smaller size. Each layout has its own Shift-drag position. Your local install starts with Mini Emblem; public installs retain the full emblem when enabled.",
+            tooltip = "Rounded Compact uses a painted-sky capsule and a raised creature medallion, with the live morph and flight-state text. Each layout has its own Shift-drag position. Your local install starts compact; public installs retain the full emblem when enabled.",
             getValue = function()
                 return GetSettings().flightIndicatorLayout
             end,
