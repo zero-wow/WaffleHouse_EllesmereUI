@@ -158,6 +158,18 @@ local function GetSettings()
     if WaffleHouseDB.autoMountAfterCombat == nil then
         WaffleHouseDB.autoMountAfterCombat = false
     end
+    if WaffleHouseDB.randomTransmogEnabled == nil then
+        -- Public installs opt in; the author's local deployment previews it.
+        local metadata = C_AddOns and C_AddOns.GetAddOnMetadata
+        WaffleHouseDB.randomTransmogEnabled = metadata
+            and metadata(ADDON_FOLDER, "X-WaffleHouse-RandomTransmogDefault") == "1" or false
+    end
+    local transmogInterval = tostring(WaffleHouseDB.randomTransmogInterval or "30")
+    if transmogInterval ~= "5" and transmogInterval ~= "15" and transmogInterval ~= "30"
+        and transmogInterval ~= "60" and transmogInterval ~= "120" and transmogInterval ~= "240" then
+        transmogInterval = "30"
+    end
+    WaffleHouseDB.randomTransmogInterval = transmogInterval
     if WaffleHouseDB.flightIndicatorEnabled == nil then
         -- Public installs default off. The author's local deployment may set
         -- a TOC-only opt-in; the resulting SavedVariable remains user-editable.

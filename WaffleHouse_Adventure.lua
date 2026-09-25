@@ -579,6 +579,37 @@ function addon.BuildAdventurePage(parent, yOffset)
         }
     ); y = y - h
 
+    _, h = W:SectionHeader(parent, "RANDOM TRANSMOG", y); y = y - h
+    _, h = W:DualRow(parent, y,
+        {
+            type = "toggle",
+            text = "Random Saved Outfit",
+            tooltip = "Periodically switch among your saved, unlocked outfits. Never creates or edits an outfit, spends gold, switches in combat, or overrides a locked outfit. Waits while moving, casting, or editing transmog. Manual outfit changes restart the timer. Off by default on public installs.",
+            getValue = function()
+                return GetSettings().randomTransmogEnabled == true
+            end,
+            setValue = function(value)
+                GetSettings().randomTransmogEnabled = value == true
+                if addon.RefreshRandomTransmog then addon.RefreshRandomTransmog() end
+            end,
+        },
+        {
+            type = "dropdown",
+            text = "Change Outfit Every",
+            values = { ["5"] = "5 Minutes", ["15"] = "15 Minutes", ["30"] = "30 Minutes",
+                ["60"] = "1 Hour", ["120"] = "2 Hours", ["240"] = "4 Hours" },
+            order = { "5", "15", "30", "60", "120", "240" },
+            tooltip = "Time between attempts, beginning when enabled or after an outfit change. Unsafe conditions defer the attempt without rapid retries.",
+            getValue = function()
+                return GetSettings().randomTransmogInterval
+            end,
+            setValue = function(value)
+                GetSettings().randomTransmogInterval = value
+                if addon.RefreshRandomTransmog then addon.RefreshRandomTransmog() end
+            end,
+        }
+    ); y = y - h
+
     _, h = W:SectionHeader(parent, "DELVE COMPANION", y); y = y - h
     _, h = W:DualRow(parent, y,
         {
