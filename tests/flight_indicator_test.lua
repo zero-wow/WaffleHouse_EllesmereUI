@@ -424,6 +424,12 @@ for size, dimensions in pairs({ small = { 114, 48 }, medium = { 132, 56 }, large
         "rounded compact size must scale the authored housing at " .. size)
     assert(badge.housing.texCoord[1] == 0.07 and badge.housing.texCoord[2] == 0.924,
         "the short panel must crop only transparent horizontal padding")
+    local expectedLeft = -badge.width / 2 + badge.height * 1.16 - 10
+    assert(math.abs(badge.chargeGems[1].shadow.x - expectedLeft) < 0.001
+        and math.abs(badge.castTicks[1].x - expectedLeft) < 0.001
+        and math.abs(badge.castTicks[#badge.castTicks].x
+            - badge.chargeGems[#badge.chargeGems].shadow.x) < 0.001,
+        "compact gems and cast marks must move ten pixels left together")
     for _, gem in ipairs(badge.chargeGems) do
         local diamondHalf = gem.glow.width * math.sqrt(2) / 2
         assert(math.abs(gem.glow.x) + diamondHalf <= badge.width / 2 + 0.001

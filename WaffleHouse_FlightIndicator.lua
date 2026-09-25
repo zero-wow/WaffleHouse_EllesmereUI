@@ -175,7 +175,7 @@ local function PositionOrnaments()
     local size = badge:GetWidth()
     if badge.layout == "compact" then
         local width, height = badge:GetWidth(), badge:GetHeight()
-        local left = -width / 2 + height * 1.16
+        local left = -width / 2 + height * 1.16 - 10
         local step = (width - height * 1.16 - 15) / 5
         -- Give the charges their own row below the capsule instead of
         -- placing tiny blue/gold sparks over its painted sky and lettering.
