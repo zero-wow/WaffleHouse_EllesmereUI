@@ -2,7 +2,11 @@ local addonName, addon = ...
 
 local STEADY_FLIGHT_AURA = 404468
 local ART_ROOT = "Interface\\AddOns\\" .. addonName .. "\\Media\\FlightStyle\\"
-local ICONS = { skyriding = ART_ROOT .. "flight-01.png", steady = ART_ROOT .. "flight-16.png" }
+local FLIGHT_FRAMES = {}
+for index = 1, 16 do
+    FLIGHT_FRAMES[index] = ART_ROOT .. "flight-" .. string.format("%02d", index) .. ".png"
+end
+local ICONS = { skyriding = FLIGHT_FRAMES[1], steady = FLIGHT_FRAMES[16] }
 local EMPTY_BACKGROUNDS = {
     skyriding = ART_ROOT .. "empty-skyriding.png",
     steady = ART_ROOT .. "empty-steady.png",
@@ -118,14 +122,16 @@ local function CreateBadge()
 
     badge.icon = badge:CreateTexture(nil, "ARTWORK")
     badge.icon:SetAllPoints()
-    badge.blend = badge:CreateTexture(nil, "OVERLAY")
+    badge.blend = badge:CreateTexture(nil, "ARTWORK", nil, 1)
     badge.blend:SetAllPoints()
     badge.blend:SetAlpha(0)
 
-    badge.creature = badge:CreateTexture(nil, "OVERLAY")
+    badge.creature = badge:CreateTexture(nil, "OVERLAY", nil, 1)
     badge.creature:SetPoint("CENTER", badge, "CENTER")
     badge.creature:SetAlpha(0)
-    badge.original = badge:CreateTexture(nil, "OVERLAY")
+    -- These endpoint paintings contain an opaque sky. They must sit BELOW
+    -- the transparent creature cutout, including during the final handoff.
+    badge.original = badge:CreateTexture(nil, "ARTWORK", nil, 2)
     badge.original:SetAllPoints()
     badge.original:SetAlpha(0)
 
@@ -137,6 +143,13 @@ local function CreateBadge()
         texture:SetTexture(path)
         texture:SetAlpha(0)
         badge.preloadedArt[#badge.preloadedArt + 1] = texture
+    end
+    badge.preloadedFrames = {}
+    for _, path in ipairs(FLIGHT_FRAMES) do
+        local texture = badge:CreateTexture(nil, "BACKGROUND")
+        texture:SetTexture(path)
+        texture:SetAlpha(0)
+        badge.preloadedFrames[#badge.preloadedFrames + 1] = texture
     end
 
     badge:SetScript("OnDragStart", function(self)
@@ -192,10 +205,53 @@ local function RenderTransition()
     end
     local progress = Clamp01(
         (GetTime() - animation.startTime) / animation.duration)
-    -- Keep the ring and sky calm. The only motion is the creature's authored
-    -- sequence, paced against the full live spell cast instead of a final burst.
-    local fromBackground = EMPTY_BACKGROUNDS[animation.from]
-    local toBackground = EMPTY_BACKGROUNDS[animation.to]
+
+    -- The original authored emblems read cleanly from dragon to bird. Do not
+    -- use the reverse-direction cutout morph here: its intermediate images
+    -- show two heads when played in this direction.
+    if animation.from == "skyriding" then
+        local framePosition = 1 + (#FLIGHT_FRAMES - 1) * progress
+        local first = math.min(#FLIGHT_FRAMES - 1, math.floor(framePosition))
+        if badge.iconPath ~= FLIGHT_FRAMES[first] then
+            badge.icon:SetTexture(FLIGHT_FRAMES[first])
+            badge.iconPath = FLIGHT_FRAMES[first]
+        end
+        if badge.blendPath ~= FLIGHT_FRAMES[first + 1] then
+            badge.blend:SetTexture(FLIGHT_FRAMES[first + 1])
+            badge.blendPath = FLIGHT_FRAMES[first + 1]
+        end
+        badge.blend:SetAlpha(framePosition - first)
+        badge.creature:SetAlpha(0)
+        badge.original:SetAlpha(0)
+        return
+    end
+
+    -- Bird to dragon keeps the stronger 48-pose morph. Reserve its last
+    -- second for the dragon's original five settling drawings, ending on the
+    -- exact static artwork instead of popping to it at cast completion.
+    if progress >= 0.82 then
+        local tailPosition = 1 + 4 * (progress - 0.82) / 0.18
+        local first = math.min(4, math.floor(tailPosition))
+        local firstPath = FLIGHT_FRAMES[6 - first]
+        local nextPath = FLIGHT_FRAMES[5 - first]
+        if badge.iconPath ~= firstPath then
+            badge.icon:SetTexture(firstPath)
+            badge.iconPath = firstPath
+        end
+        if badge.blendPath ~= nextPath then
+            badge.blend:SetTexture(nextPath)
+            badge.blendPath = nextPath
+        end
+        badge.blend:SetAlpha(tailPosition - first)
+        badge.creature:SetAlpha(0)
+        badge.original:SetAlpha(0)
+        return
+    end
+
+    -- Darken the sky behind the independently layered creature. The cutout
+    -- stays on OVERLAY even while both background paintings crossfade.
+    local fromBackground = EMPTY_BACKGROUNDS.steady
+    local toBackground = EMPTY_BACKGROUNDS.skyriding
     if badge.iconPath ~= fromBackground then
         badge.icon:SetTexture(fromBackground)
         badge.iconPath = fromBackground
@@ -204,10 +260,9 @@ local function RenderTransition()
         badge.blend:SetTexture(toBackground)
         badge.blendPath = toBackground
     end
-    badge.blend:SetAlpha(SmoothStep((progress - 0.12) / 0.76))
+    badge.blend:SetAlpha(SmoothStep((progress - 0.12) / 0.70))
 
-    local position = 1 + (#CREATURE - 1) * (animation.from == "skyriding"
-        and progress or (1 - progress))
+    local position = #CREATURE - (#CREATURE - 5) * progress / 0.82
     local index = math.max(1, math.min(#CREATURE, math.floor(position + 0.5)))
     if badge.creaturePath ~= CREATURE[index] then
         badge.creature:SetTexture(CREATURE[index])
@@ -219,13 +274,9 @@ local function RenderTransition()
     local creatureSize = badge:GetWidth() * (0.90 - 0.12 * morphProgress)
     badge.creature:SetSize(creatureSize, creatureSize)
 
-    local originalAlpha = 0
-    if progress < 0.06 then
-        originalAlpha = 1 - SmoothStep(progress / 0.06)
-    elseif progress > 0.92 then
-        originalAlpha = SmoothStep((progress - 0.92) / 0.08)
-    end
-    local originalPath = progress < 0.5 and ICONS[animation.from] or ICONS[animation.to]
+    local originalAlpha = progress < 0.06 and (1 - SmoothStep(progress / 0.06))
+        or SmoothStep((progress - 0.76) / 0.06)
+    local originalPath = progress < 0.76 and ICONS.steady or FLIGHT_FRAMES[5]
     if badge.originalPath ~= originalPath then
         badge.original:SetTexture(originalPath)
         badge.originalPath = originalPath

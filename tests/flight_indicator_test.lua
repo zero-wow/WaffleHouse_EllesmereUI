@@ -50,8 +50,8 @@ local function NewFrame(name)
         if self.scripts.OnHide then self.scripts.OnHide(self) end
     end
     function f:IsShown() return self.shown end
-    function f:CreateTexture()
-        local texture = {}
+    function f:CreateTexture(_, layer, _, sublevel)
+        local texture = { layer = layer, sublevel = sublevel or 0 }
         function texture:SetAllPoints() end
         function texture:SetPoint(_, _, _, x, y) self.x, self.y = x or 0, y or 0 end
         function texture:ClearAllPoints() end
@@ -122,8 +122,15 @@ end
 event("PLAYER_LOGIN")
 assert(badge and badge.shown and badge.style == "steady", "steady aura should show the steady badge")
 assert(#badge.preloadedArt == 48, "all 48 creature stages should be loaded before the first cast")
+assert(#badge.preloadedFrames == 16, "the original emblem sequence must be ready before the cast")
 assert(not badge.wind and not badge.veil and not badge.rim,
     "the rejected swirling overlays must not appear in the flight indicator")
+assert(badge.icon.layer == "ARTWORK" and badge.blend.layer == "ARTWORK"
+    and badge.blend.sublevel > badge.icon.sublevel
+    and badge.original.layer == "ARTWORK"
+    and badge.original.sublevel > badge.blend.sublevel
+    and badge.creature.layer == "OVERLAY",
+    "the transparent creature must draw above every sky and opaque emblem")
 assert(badge.icon.path:find("flight%-16%.png"), "steady badge should use last art frame")
 assert(badge.mouse == false, "badge must not block ordinary HUD clicks")
 
@@ -143,7 +150,7 @@ assert(badge.mouse == false, "releasing Shift must stop intercepting clicks")
 event("UNIT_SPELLCAST_START", "player", "cast-one", 460003)
 assert(badge.scripts.OnUpdate, "Switch Flight Style cast must begin the animation")
 assert(badge.original.alpha == 1 and badge.creature.alpha == 0,
-    "the original emblem must cover the first sprite at cast start")
+    "the starting emblem should be visible before the creature appears")
 local function creatureStage()
     for index, texture in ipairs(badge.preloadedArt) do
         if texture.path == badge.creature.path then return index end
@@ -151,17 +158,24 @@ local function creatureStage()
     error("creature texture is outside the authored sequence")
 end
 local previous = 49
-for second = 1, 4 do
+for second = 1, 3 do
     advance(1)
     local stage = creatureStage()
-    assert(stage < previous and math.abs(stage - (48 - 47 * second / 5)) <= 1,
-        "reverse creature poses must progress evenly across the whole cast")
+    assert(stage < previous and math.abs(stage - (48 - 43 * second / 5 / 0.82)) <= 1,
+        "bird-to-dragon poses must progress evenly until the settling tail")
     previous = stage
 end
+advance(0.9)
 assert(badge.icon.path:find("empty%-steady%.png")
     and badge.blend.path:find("empty%-skyriding%.png")
-    and badge.creature.alpha == 1,
-    "the cast must show one steady creature over calm, changing skies")
+    and badge.blend.alpha > 0.95
+    and badge.original.path:find("flight%-05%.png")
+    and badge.original.alpha > 0 and badge.creature.alpha > 0,
+    "the dragon must remain in front of the darkening sky during the handoff")
+advance(0.1)
+assert(badge.icon.path:find("empty%-steady%.png")
+    and badge.original.alpha > 0 and badge.original.alpha < 1,
+    "the authored dragon tail should begin only in the final second")
 event("UNIT_SPELLCAST_INTERRUPTED", "player", "cast-one", 460003)
 assert(not badge.scripts.OnUpdate and badge.style == "steady", "interrupted cast must restore prior state")
 assert(badge.blend.alpha == 0 and badge.creature.alpha == 0,
@@ -170,10 +184,13 @@ assert(badge.blend.alpha == 0 and badge.creature.alpha == 0,
 castDuration = 7
 event("UNIT_SPELLCAST_START", "player", "cast-two", 460002)
 advance(5)
-assert(creatureStage() < 48 and badge.scripts.OnUpdate,
+assert(creatureStage() < 48 and badge.creature.alpha > 0 and badge.scripts.OnUpdate,
     "a longer live cast must not finish its animation two seconds early")
 advance(2)
-assert(creatureStage() == 1, "the reverse cast should reach its final pose at the bar's end")
+assert(badge.icon.path:find("flight%-02%.png")
+    and badge.blend.path:find("flight%-01%.png")
+    and math.abs(badge.blend.alpha - 1) < 0.001 and badge.creature.alpha == 0,
+    "the dragon's final settle must end exactly with the live cast")
 aura = nil
 event("UNIT_SPELLCAST_STOP", "player", "cast-two", 460002)
 event("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-two", 460002)
@@ -185,13 +202,16 @@ assert(badge.icon.path:find("flight%-01%.png"), "Skyriding must use first art fr
 castDuration = 5
 event("UNIT_SPELLCAST_START", "player", "cast-forward", 436854)
 advance(2.5)
-assert(badge.icon.path:find("empty%-skyriding%.png")
-    and badge.blend.path:find("empty%-steady%.png")
-    and creatureStage() >= 24 and creatureStage() <= 25,
-    "the halfway pose must occur halfway through the cast without a vortex")
+assert(badge.icon.path:find("flight%-08%.png")
+    and badge.blend.path:find("flight%-09%.png")
+    and math.abs(badge.blend.alpha - 0.5) < 0.001
+    and badge.creature.alpha == 0,
+    "the dragon-to-bird cast should crossfade authored full emblems")
 advance(1.5)
-assert(creatureStage() >= 38 and creatureStage() <= 40,
-    "the forward pose should continue steadily rather than flickering in a burst")
+assert(badge.icon.path:find("flight%-13%.png")
+    and badge.blend.path:find("flight%-14%.png")
+    and badge.blend.alpha == 0,
+    "the forward sequence must continue evenly across the live cast")
 event("UNIT_SPELLCAST_INTERRUPTED", "player", "cast-forward", 436854)
 assert(badge.style == "skyriding" and badge.creature.alpha == 0,
     "cancelling the forward transition must restore its static dragon art")
