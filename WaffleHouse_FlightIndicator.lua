@@ -7,6 +7,8 @@ for index = 1, 16 do
         .. "\\Media\\FlightStyle\\flight-" .. string.format("%02d", index) .. ".png"
 end
 local ICONS = { skyriding = TRANSITION[1], steady = TRANSITION[16] }
+local WIND_TEXTURE = "Interface\\AddOns\\" .. addonName .. "\\Media\\FlightStyle\\wind.png"
+local VEIL_TEXTURE = "Interface\\AddOns\\" .. addonName .. "\\Media\\FlightStyle\\veil.png"
 local SWITCH_SPELLS = { [436854] = true, [460002] = true, [460003] = true }
 local SIZES = { small = 76, medium = 104, large = 132 }
 local DEFAULT_X, DEFAULT_Y = 0, 180
@@ -60,6 +62,17 @@ local function CreateBadge()
     badge.blend:SetAllPoints()
     badge.blend:SetAlpha(0)
 
+    badge.wind = badge:CreateTexture(nil, "OVERLAY")
+    badge.wind:SetPoint("CENTER", badge, "CENTER")
+    badge.wind:SetTexture(WIND_TEXTURE)
+    badge.wind:SetBlendMode("ADD")
+    badge.wind:SetAlpha(0)
+
+    badge.veil = badge:CreateTexture(nil, "OVERLAY")
+    badge.veil:SetPoint("CENTER", badge, "CENTER")
+    badge.veil:SetTexture(VEIL_TEXTURE)
+    badge.veil:SetAlpha(0)
+
     badge:SetScript("OnDragStart", function(self)
         if IsShiftKeyDown() then self:StartMoving() end
     end)
@@ -85,6 +98,10 @@ local function ShowStaticStyle(style)
     badge.icon:SetTexture(ICONS[style])
     badge.iconPath = ICONS[style]
     badge.blend:SetAlpha(0)
+    badge.icon:SetRotation(0)
+    badge.blend:SetRotation(0)
+    badge.wind:SetAlpha(0)
+    badge.veil:SetAlpha(0)
     badge.style = style
     badge:Show()
 end
@@ -106,7 +123,17 @@ local function RenderTransition()
     if not (badge and animation) then return end
     local progress = math.max(0, math.min(1,
         (GetTime() - animation.startTime) / animation.duration))
-    local framePos = progress * (#TRANSITION - 1)
+    -- Hold the recognisable starting form while wind builds, then sweep
+    -- through the pose change under the bright vortex near the cast's end.
+    -- The same authored art is played backwards for the opposite switch.
+    local framePos
+    if progress < 0.68 then
+        framePos = 4 * progress / 0.68
+    elseif progress < 0.95 then
+        framePos = 4 + 10 * (progress - 0.68) / 0.27
+    else
+        framePos = 14 + (progress - 0.95) / 0.05
+    end
     local index = math.min(#TRANSITION - 1, math.floor(framePos) + 1)
     local fraction = framePos - (index - 1)
     local startIndex = animation.from == "skyriding" and index or (#TRANSITION + 1 - index)
@@ -120,6 +147,24 @@ local function RenderTransition()
         badge.blendPath = TRANSITION[endIndex]
     end
     badge.blend:SetAlpha(fraction)
+
+    local direction = animation.from == "skyriding" and 1 or -1
+    local spin = math.max(0, math.min(1, (progress - 0.58) / 0.28))
+    spin = spin * spin * (3 - 2 * spin)
+    local angle = direction * 2 * math.pi * spin
+    badge.icon:SetRotation(angle)
+    badge.blend:SetRotation(angle)
+
+    badge.wind:SetRotation(direction * 10 * math.pi * progress)
+    badge.wind:SetAlpha(math.max(0, math.sin(math.pi * progress)) * 0.78)
+    local veilAlpha = 0
+    if progress >= 0.52 and progress < 0.70 then
+        veilAlpha = 0.96 * (progress - 0.52) / 0.18
+    elseif progress >= 0.70 and progress < 0.86 then
+        veilAlpha = 0.96 * (0.86 - progress) / 0.16
+    end
+    badge.veil:SetRotation(-direction * 4 * math.pi * progress)
+    badge.veil:SetAlpha(veilAlpha)
 end
 
 local function StartStyleCast(castGUID)
@@ -196,6 +241,8 @@ function addon.RefreshFlightIndicator()
     if not badge then CreateBadge() end
     local size = SIZES[settings.flightIndicatorSize] or SIZES.medium
     badge:SetSize(size, size)
+    badge.wind:SetSize(size * 0.77, size * 0.77)
+    badge.veil:SetSize(size * 0.72, size * 0.72)
     PositionBadge(settings)
     badge:EnableMouse(IsShiftKeyDown())
 

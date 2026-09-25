@@ -48,7 +48,11 @@ local function NewFrame(name)
     function f:CreateTexture()
         local texture = {}
         function texture:SetAllPoints() end
+        function texture:SetPoint() end
+        function texture:SetSize(w, h) self.width, self.height = w, h end
         function texture:SetTexture(path) self.path = path end
+        function texture:SetBlendMode(mode) self.blendMode = mode end
+        function texture:SetRotation(angle) self.angle = angle end
         function texture:SetAlpha(alpha) self.alpha = alpha end
         return texture
     end
@@ -80,6 +84,11 @@ for i = 1, 16 do
     local file = assert(io.open(name, "rb"), "missing animation art " .. name)
     file:close()
 end
+for _, name in ipairs({ "wind.png", "veil.png" }) do
+    local path = "Media/FlightStyle/" .. name
+    local file = assert(io.open(path, "rb"), "missing animation effect " .. path)
+    file:close()
+end
 
 event("PLAYER_LOGIN")
 assert(badge and badge.shown and badge.style == "steady", "steady aura should show the steady badge")
@@ -102,10 +111,20 @@ assert(badge.mouse == false, "releasing Shift must stop intercepting clicks")
 event("UNIT_SPELLCAST_START", "player", "cast-one", 460003)
 assert(badge.scripts.OnUpdate, "Switch Flight Style cast must begin the animation")
 advance(2.5)
-assert(badge.icon.path:find("flight%-09%.png") or badge.icon.path:find("flight%-08%.png"),
-    "steady-to-skyriding must run the flipbook in reverse")
+assert(badge.icon.path:find("flight%-14%.png") or badge.icon.path:find("flight%-13%.png"),
+    "first half of the cast should still show the starting form in reverse")
+assert(badge.wind.alpha > 0 and badge.veil.alpha == 0,
+    "moving wind should build before the pose-changing flash")
+advance(1)
+assert(badge.veil.alpha > 0.8 and badge.icon.angle < 0,
+    "the bright veil and reverse spin should cover the sharp pose change")
+advance(1)
+assert(badge.veil.alpha == 0 and badge.wind.alpha > 0,
+    "the new form should clear before the cast finishes")
 event("UNIT_SPELLCAST_INTERRUPTED", "player", "cast-one", 460003)
 assert(not badge.scripts.OnUpdate and badge.style == "steady", "interrupted cast must restore prior state")
+assert(badge.wind.alpha == 0 and badge.veil.alpha == 0 and badge.icon.angle == 0,
+    "interruption must clear all animated overlays and rotation")
 
 event("UNIT_SPELLCAST_START", "player", "cast-two", 460002)
 advance(5)
@@ -116,6 +135,17 @@ advance(0)
 assert(badge.style == "skyriding" and not badge.scripts.OnUpdate,
     "successful cast must settle on the actual new style")
 assert(badge.icon.path:find("flight%-01%.png"), "Skyriding must use first art frame")
+
+event("UNIT_SPELLCAST_START", "player", "cast-forward", 436854)
+advance(2.5)
+assert(badge.icon.path:find("flight%-03%.png") or badge.icon.path:find("flight%-04%.png"),
+    "Skyriding must stay recognisable through the first half of the full cast")
+advance(1.5)
+assert(badge.icon.path:find("flight%-09%.png") or badge.icon.path:find("flight%-10%.png"),
+    "the forward bird reveal must occur late in the cast")
+event("UNIT_SPELLCAST_INTERRUPTED", "player", "cast-forward", 436854)
+assert(badge.style == "skyriding" and badge.icon.angle == 0,
+    "cancelling the forward transition must restore its static dragon art")
 
 secret = true
 aura = true

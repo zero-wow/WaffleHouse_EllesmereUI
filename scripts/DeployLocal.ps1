@@ -34,6 +34,13 @@ for ($index = 1; $index -le 16; $index++) {
         throw "Art deployment mismatch: $name"
     }
 }
+foreach ($name in @('wind.png', 'veil.png')) {
+    Copy-Item -LiteralPath (Join-Path $sourceArt $name) -Destination (Join-Path $installedArt $name) -Force
+    if ((Get-FileHash -LiteralPath (Join-Path $sourceArt $name) -Algorithm SHA256).Hash -ne
+        (Get-FileHash -LiteralPath (Join-Path $installedArt $name) -Algorithm SHA256).Hash) {
+        throw "Art deployment mismatch: $name"
+    }
+}
 
 $utf8 = [System.Text.UTF8Encoding]::new($false)
 [System.IO.File]::WriteAllText((Join-Path $installed $tocName), $localToc, $utf8)
