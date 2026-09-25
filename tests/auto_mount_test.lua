@@ -69,7 +69,12 @@ local function combatCycle()
     frame:OnEvent("PLAYER_REGEN_DISABLED")
     state.combat = false
     frame:OnEvent("PLAYER_REGEN_ENABLED")
-    advance(0.35)
+    local before = #summons
+    advance(2.9)
+    tick()
+    assert(#summons == before, "combat exit must leave time for looting")
+    advance(0.2)
+    tick()
 end
 
 assert(loadfile(source))("WaffleHouse_EllesmereUI", addon)
@@ -94,7 +99,11 @@ assert(#summons == 0 and #tickers == 0, "auto mounting is opt-in")
 
 settings.autoMountAfterCombat = true
 addon.RefreshAutoMount()
-advance(0.35)
+advance(0.9)
+tick()
+assert(#summons == 0, "enabling must wait for a quiet second")
+advance(0.2)
+tick()
 assert(#summons == 1 and summons[1] == 0, "enabling out of combat must mount without a combat cycle")
 tick()
 assert(#summons == 1, "failed summons must not be retried every tick")
@@ -113,6 +122,56 @@ tick()
 assert(#summons == 2, "manual dismount must suppress remounting")
 combatCycle()
 assert(#summons == 3, "the next combat exit must clear manual-dismount suppression")
+
+state.combat = true
+frame:OnEvent("PLAYER_REGEN_DISABLED")
+state.combat = false
+frame:OnEvent("PLAYER_REGEN_ENABLED")
+state.moving = true
+frame:OnEvent("PLAYER_STARTED_MOVING")
+local count = #summons
+advance(5)
+tick()
+assert(#summons == count, "movement must hold mounting even after combat grace")
+state.moving = false
+frame:OnEvent("PLAYER_STOPPED_MOVING")
+advance(0.9)
+tick()
+assert(#summons == count, "stopping movement must start a quiet second")
+advance(0.2)
+tick()
+assert(#summons == count + 1, "mounting must resume after the movement quiet period")
+
+state.combat = true
+frame:OnEvent("PLAYER_REGEN_DISABLED")
+state.combat = false
+frame:OnEvent("PLAYER_REGEN_ENABLED")
+frame:OnEvent("LOOT_OPENED")
+count = #summons
+advance(5)
+tick()
+assert(#summons == count, "an open loot window must hold mounting")
+frame:OnEvent("LOOT_CLOSED")
+advance(0.9)
+tick()
+assert(#summons == count, "closing loot must start a quiet second")
+advance(0.2)
+tick()
+assert(#summons == count + 1, "mounting must resume after looting")
+
+state.combat = true
+frame:OnEvent("PLAYER_REGEN_DISABLED")
+state.combat = false
+frame:OnEvent("PLAYER_REGEN_ENABLED")
+count = #summons
+advance(2.9)
+frame:OnEvent("UNIT_SPELLCAST_SENT", "player")
+advance(0.2)
+tick()
+assert(#summons == count, "player spellcasts must extend the quiet period")
+advance(0.9)
+tick()
+assert(#summons == count + 1, "mounting must resume after spell activity")
 
 local filterArgs, randomStyle
 _G.LiteMount = { LM = {
@@ -147,7 +206,7 @@ settings.autoMountProvider = "litemount"
 _G.LiteMount.LM.MountRegistry.FilterSearch = function()
     return { Random = function() return nil end }
 end
-local count = #summons
+count = #summons
 combatCycle()
 assert(#summons == count, "an intentionally empty LiteMount pool must not bypass its settings")
 
@@ -182,6 +241,9 @@ state.combat = false
 frame:OnEvent("PLAYER_REGEN_ENABLED")
 count = #summons
 advance(0.35)
+assert(#summons == count, "combat grace period must apply to replacement attempts")
+advance(2.75)
+tick()
 assert(#summons == count + 1, "a new combat must cancel the stale attempt")
 
 local locations = {

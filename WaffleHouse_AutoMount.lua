@@ -80,8 +80,14 @@ local ticker
 local lastMounted
 local respectDismount = false
 local nextAttemptAt = 0
+local idleUntil = 0
+local lootOpen = false
 local attemptToken = 0
 local sawCombat = false
+
+local function WaitForIdle(seconds)
+    idleUntil = math.max(idleUntil, GetTime() + seconds)
+end
 
 local function ObserveMountState()
     local mounted = IsMounted()
@@ -95,9 +101,15 @@ end
 local function TryAutoMount()
     ObserveMountState()
     local settings = addon.GetSettings and addon.GetSettings()
-    if not settings or settings.autoMountAfterCombat ~= true
-        or respectDismount or not addon.IsAutoMountLocationAllowed(settings)
-        or not CanAutoMount() or GetTime() < nextAttemptAt then return end
+    if not settings or settings.autoMountAfterCombat ~= true or respectDismount then return end
+    if InCombatLockdown() or UnitAffectingCombat("player") then return end
+    if not addon.IsAutoMountLocationAllowed(settings) then return end
+    if lootOpen or GetUnitSpeed("player") > 0
+        or UnitCastingInfo("player") or UnitChannelInfo("player") then
+        WaitForIdle(1)
+        return
+    end
+    if GetTime() < idleUntil or GetTime() < nextAttemptAt or not CanAutoMount() then return end
 
     local mountID = 0
     if settings.autoMountProvider ~= "wow" then
@@ -124,11 +136,13 @@ function addon.RefreshAutoMount()
         if ticker then ticker:Cancel(); ticker = nil end
         return
     end
+    if InCombatLockdown() or UnitAffectingCombat("player") then sawCombat = true end
     if not ticker then
         lastMounted = IsMounted()
         respectDismount = false
         nextAttemptAt = 0
-        ticker = C_Timer.NewTicker(2, TryAutoMount)
+        WaitForIdle(1)
+        ticker = C_Timer.NewTicker(1, TryAutoMount)
     end
     local token = attemptToken
     C_Timer.After(0.35, function()
@@ -139,23 +153,39 @@ end
 local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
+events:RegisterEvent("PLAYER_STARTED_MOVING")
+events:RegisterEvent("PLAYER_STOPPED_MOVING")
+events:RegisterEvent("LOOT_OPENED")
+events:RegisterEvent("LOOT_CLOSED")
+events:RegisterEvent("UNIT_SPELLCAST_SENT")
 events:RegisterEvent("PLAYER_REGEN_DISABLED")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
-events:SetScript("OnEvent", function(_, event)
+events:SetScript("OnEvent", function(_, event, unit)
     if event == "PLAYER_LOGIN" then
         addon.RefreshAutoMount()
     elseif event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
         ObserveMountState()
+    elseif event == "PLAYER_STARTED_MOVING" or event == "PLAYER_STOPPED_MOVING" then
+        WaitForIdle(1)
+    elseif event == "LOOT_OPENED" then
+        lootOpen = true
+        WaitForIdle(1)
+    elseif event == "LOOT_CLOSED" then
+        lootOpen = false
+        WaitForIdle(1)
+    elseif event == "UNIT_SPELLCAST_SENT" then
+        if unit == "player" then WaitForIdle(1) end
     elseif event == "PLAYER_REGEN_DISABLED" then
         sawCombat = true
         attemptToken = attemptToken + 1
-    elseif sawCombat then
+    elseif event == "PLAYER_REGEN_ENABLED" and sawCombat then
         sawCombat = false
         respectDismount = false
         -- A mount lost during combat is not an out-of-combat manual dismount,
         -- even if its display-change event was missed.
         lastMounted = IsMounted()
         nextAttemptAt = 0
+        WaitForIdle(3)
         addon.RefreshAutoMount()
     end
 end)
