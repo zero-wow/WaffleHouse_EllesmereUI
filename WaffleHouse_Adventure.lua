@@ -447,12 +447,12 @@ function addon.BuildAdventurePage(parent, yOffset)
             type = "dropdown",
             text = "Mount Picker",
             values = {
-                auto = "Auto: LiteMount / WoW",
-                litemount = "LiteMount Random",
+                auto = "Auto: LiteMount Button 1 / WoW",
+                litemount = "LiteMount Button 1 Rules",
                 wow = "WoW Random Favorite",
             },
             order = { "auto", "litemount", "wow" },
-            tooltip = "Auto uses LiteMount's enabled, castable journal-mount pool and its random weighting when LiteMount is loaded; otherwise it uses WoW's random favorite. LiteMount Random also falls back to WoW if LiteMount is unavailable. LiteMount's custom action rules, shapeshift spells, and item mounts cannot run automatically here.",
+            tooltip = "Auto evaluates LiteMount Button 1's active rules when LiteMount is loaded, otherwise it uses WoW's random favorite. LiteMount Button 1 Rules also falls back to WoW if LiteMount is absent. A plain journal-mount result can be summoned automatically; forms, items, macros, and actions needing a secure click are skipped rather than replaced with the wrong mount.",
             getValue = function()
                 return GetSettings().autoMountProvider
             end,

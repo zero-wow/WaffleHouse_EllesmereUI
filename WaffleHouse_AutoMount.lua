@@ -40,31 +40,65 @@ function addon.IsAutoMountLocationAllowed(settings)
     return type(locations) ~= "table" or locations[CurrentLocationType()] ~= false
 end
 
--- SummonByID is the journal's direct mount path. LiteMount's secure buttons
--- can also cast forms, use items, and run macros; those actions must not be
--- programmatically clicked from a combat-exit event.
+-- Evaluate LiteMount's actual Button 1 rules without touching its protected
+-- button. Only a plain journal-mount spell can be summoned from our timer;
+-- forms, items, macros, and composite actions still require a real keypress.
 local function PickLiteMountID()
     local button = _G.LiteMount
+    if not button then return nil, false end
     local lm = button and button.LM
     local registry = lm and lm.MountRegistry
     local environment = lm and lm.Environment
     local options = lm and lm.Options
-    if not (registry and registry.mounts and registry.RefreshMounts and registry.FilterSearch
-        and environment and environment.RefreshState and options and options.GetOption) then
-        return nil, false
+    local actions = button.actions
+    local actionButton = actions and actions[1]
+    if not (registry and registry.RefreshMounts and environment and environment.RefreshState
+        and options and options.GetOption and options.GetCompiledButtonRuleSet
+        and actionButton and type(actionButton.context) == "table"
+        and C_MountJournal and type(C_MountJournal.GetMountFromSpell) == "function") then
+        -- LiteMount is loaded but not ready (or changed its internals). Never
+        -- silently bypass its Button 1 rules with a WoW random favorite.
+        return nil, true
     end
 
     local ok, mountID = pcall(function()
         registry:RefreshMounts()
         environment:RefreshState()
-        local mounts = registry:FilterSearch("JOURNAL", "CASTABLE", "ENABLED")
-        if not (mounts and mounts.Random) then return end
-        local mount = mounts:Random(options:GetOption("randomWeightStyle"))
-        return mount and mount.mountID
+        local context = actionButton.context
+        local keepSeconds = options:GetOption("randomKeepSeconds")
+        if type(keepSeconds) == "number"
+            and GetTime() - (context.persistTime or 0) >= keepSeconds then
+            context.persistMount = nil
+            context.persistTime = GetTime()
+        end
+        local buttonContexts = {}
+        for index, action in ipairs(actions) do buttonContexts[index] = action.context end
+        local runContext = setmetatable({
+            self = context,
+            button = buttonContexts,
+            inputButton = "LeftButton",
+            limits = {},
+            flowControl = {},
+            rule = {},
+        }, { __index = context })
+        local ruleSet = options:GetCompiledButtonRuleSet(1)
+        local selected = ruleSet and ruleSet:Run(runContext)
+        if not selected or selected.type ~= "spell" or selected.EXECUTE
+            or (selected.unit and selected.unit ~= "player") then return end
+        local spell = selected.spell
+        if (issecretvalue and issecretvalue(spell)) then return end
+        local mountID = C_MountJournal.GetMountFromSpell(spell)
+        if not mountID and C_Spell and type(C_Spell.GetSpellInfo) == "function" then
+            local info = C_Spell.GetSpellInfo(spell)
+            if info and not (issecretvalue and issecretvalue(info.spellID)) then
+                mountID = C_MountJournal.GetMountFromSpell(info.spellID)
+            end
+        end
+        return mountID
     end)
-    if not ok then return nil, false end
-    -- An empty LiteMount pool is intentional (for example all mounts disabled).
-    -- Do not bypass that choice by summoning a WoW favorite.
+    if not ok or (issecretvalue and issecretvalue(mountID)) then return nil, true end
+    -- No journal mount means Button 1 selected another action or no action.
+    -- Honor that choice rather than replacing it with a random WoW mount.
     return mountID, true
 end
 

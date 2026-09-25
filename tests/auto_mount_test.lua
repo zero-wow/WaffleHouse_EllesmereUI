@@ -26,7 +26,15 @@ C_Timer = {
 }
 C_MountJournal = {
     SummonByID = function(id) summons[#summons + 1] = id end,
-    GetMountFromSpell = function(spellID) return spellID == 1234 and 42 or nil end,
+    GetMountFromSpell = function(spellID)
+        if spellID == 1234 or spellID == 5678 then return 42 end
+        if spellID == "Custom Mount" then return 84 end
+    end,
+}
+C_Spell = {
+    GetSpellInfo = function(spell)
+        if spell == "Sky Mount" then return { spellID = 5678 } end
+    end,
 }
 GetTime = function() return now end
 InCombatLockdown = function() return state.combat end
@@ -226,42 +234,59 @@ advance(0.9)
 tick()
 assert(#summons == count + 1, "mounting must resume after spell activity")
 
-local filterArgs, randomStyle
-_G.LiteMount = { LM = {
-    MountRegistry = {
-        mounts = {},
-        RefreshMounts = function() end,
-        FilterSearch = function(_, ...)
-            filterArgs = { ... }
-            return { Random = function(_, style)
-                randomStyle = style
-                return { mountID = 42 }
-            end }
-        end,
+local button1Action = { type = "spell", spell = "Sky Mount", unit = "player" }
+local refreshedMounts, refreshedEnvironment, ruleCalls = 0, 0, 0
+_G.LiteMount = {
+    actions = { { context = {} }, { context = {} } },
+    LM = {
+        MountRegistry = { RefreshMounts = function() refreshedMounts = refreshedMounts + 1 end },
+        Environment = { RefreshState = function() refreshedEnvironment = refreshedEnvironment + 1 end },
+        Options = {
+            GetOption = function(_, name)
+                assert(name == "randomKeepSeconds")
+                return 0
+            end,
+            GetCompiledButtonRuleSet = function(_, index)
+                assert(index == 1, "automatic LiteMount must evaluate Button 1")
+                return { Run = function(_, context)
+                    ruleCalls = ruleCalls + 1
+                    assert(context.inputButton == "LeftButton")
+                    assert(context.self == _G.LiteMount.actions[1].context)
+                    assert(context.button[2] == _G.LiteMount.actions[2].context)
+                    assert(type(context.limits) == "table" and type(context.flowControl) == "table")
+                    return button1Action
+                end }
+            end,
+        },
     },
-    Environment = { RefreshState = function() end },
-    Options = { GetOption = function(_, name)
-        assert(name == "randomWeightStyle")
-        return "Priority"
-    end },
-} }
+}
 combatCycle()
-assert(summons[#summons] == 42, "LiteMount must supply the chosen journal mount")
-assert(filterArgs[1] == "JOURNAL" and filterArgs[2] == "CASTABLE" and filterArgs[3] == "ENABLED",
-    "LiteMount selection must honor its enabled castable journal pool")
-assert(randomStyle == "Priority", "LiteMount selection must honor its random weighting")
+assert(summons[#summons] == 42, "LiteMount Button 1's selected journal mount must be summoned")
+assert(refreshedMounts == 1 and refreshedEnvironment == 1 and ruleCalls == 1,
+    "Button 1 rules must run against fresh LiteMount state")
+
+button1Action = { type = "spell", spell = "Custom Mount", unit = "player" }
+combatCycle()
+assert(summons[#summons] == 84, "custom Button 1 mount rules must be honored")
 
 settings.autoMountProvider = "wow"
 combatCycle()
 assert(summons[#summons] == 0, "explicit WoW picker must ignore LiteMount")
 
 settings.autoMountProvider = "litemount"
-_G.LiteMount.LM.MountRegistry.FilterSearch = function()
-    return { Random = function() return nil end }
-end
+button1Action = { type = "spell", spell = "Travel Form", unit = "player" }
 count = #summons
 combatCycle()
-assert(#summons == count, "an intentionally empty LiteMount pool must not bypass its settings")
+assert(#summons == count, "a non-journal Button 1 spell must not be replaced by a random mount")
+button1Action = { type = "spell", spell = "Sky Mount", unit = "player", EXECUTE = function() end }
+combatCycle()
+assert(#summons == count, "a composite Button 1 action requiring secure execution must be skipped")
+button1Action = { type = "macro", macrotext = "/cast Travel Form" }
+combatCycle()
+assert(#summons == count, "a Button 1 macro must not be replaced by a random mount")
+_G.LiteMount.actions = nil
+combatCycle()
+assert(#summons == count, "LiteMount not yet initialized must not bypass its rules")
 
 _G.LiteMount = nil
 combatCycle()
