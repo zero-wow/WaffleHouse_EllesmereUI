@@ -7,6 +7,8 @@ $publicMarker = '## X-WaffleHouse-FlightIndicatorDefault: 0'
 $ownerMarker = '## X-WaffleHouse-FlightIndicatorDefault: 1'
 $publicTransmogMarker = '## X-WaffleHouse-RandomTransmogDefault: 0'
 $ownerTransmogMarker = '## X-WaffleHouse-RandomTransmogDefault: 1'
+$publicTransmogButtonMarker = '## X-WaffleHouse-RandomTransmogButtonDefault: 0'
+$ownerTransmogButtonMarker = '## X-WaffleHouse-RandomTransmogButtonDefault: 1'
 
 if (-not (Test-Path -LiteralPath $installed -PathType Container)) {
     throw "Installed addon folder not found: $installed"
@@ -20,12 +22,24 @@ if ($toc.IndexOf($publicMarker, [StringComparison]::Ordinal) -lt 0) {
 if ($toc.IndexOf($publicTransmogMarker, [StringComparison]::Ordinal) -lt 0) {
     throw 'Public random-transmog default marker is missing from the source TOC.'
 }
-$localToc = $toc.Replace($publicMarker, $ownerMarker).Replace($publicTransmogMarker, $ownerTransmogMarker)
+if ($toc.IndexOf($publicTransmogButtonMarker, [StringComparison]::Ordinal) -lt 0) {
+    throw 'Public random-transmog button default marker is missing from the source TOC.'
+}
+$localToc = $toc.Replace($publicMarker, $ownerMarker).Replace($publicTransmogMarker, $ownerTransmogMarker).Replace($publicTransmogButtonMarker, $ownerTransmogButtonMarker)
 
 # Only deploy completed source changes; preserve unrelated installed files.
-# Both source TOC defaults remain off for public users.
-foreach ($name in @('WaffleHouse_EllesmereUI.lua', 'WaffleHouse_Adventure.lua', 'WaffleHouse_FlightIndicator.lua', 'WaffleHouse_RandomTransmog.lua')) {
+# Source TOC defaults remain off for public users.
+foreach ($name in @('WaffleHouse_EllesmereUI.lua', 'WaffleHouse_Adventure.lua', 'WaffleHouse_FlightIndicator.lua', 'WaffleHouse_RandomTransmog.lua', 'WaffleHouse_BagSlotFreeze.lua', 'WaffleHouse_Slash.lua')) {
     Copy-Item -LiteralPath (Join-Path $source $name) -Destination (Join-Path $installed $name) -Force
+}
+
+$sourceTransmogArt = Join-Path $source 'Media\RandomTransmog\random-outfit-button.png'
+$installedTransmogArt = Join-Path $installed 'Media\RandomTransmog\random-outfit-button.png'
+New-Item -ItemType Directory -Path (Split-Path -Parent $installedTransmogArt) -Force | Out-Null
+Copy-Item -LiteralPath $sourceTransmogArt -Destination $installedTransmogArt -Force
+if ((Get-FileHash -LiteralPath $sourceTransmogArt -Algorithm SHA256).Hash -ne
+    (Get-FileHash -LiteralPath $installedTransmogArt -Algorithm SHA256).Hash) {
+    throw 'Random-transmog art deployment mismatch.'
 }
 
 $sourceArt = Join-Path $source 'Media\FlightStyle'
@@ -84,5 +98,8 @@ if (-not (Select-String -LiteralPath (Join-Path $installed $tocName) -SimpleMatc
 if (-not (Select-String -LiteralPath (Join-Path $installed $tocName) -SimpleMatch $ownerTransmogMarker)) {
     throw 'The local random-transmog owner-default marker was not deployed.'
 }
+if (-not (Select-String -LiteralPath (Join-Path $installed $tocName) -SimpleMatch $ownerTransmogButtonMarker)) {
+    throw 'The local random-transmog button owner-default marker was not deployed.'
+}
 
-Write-Output 'Waffle House flight indicator and random transmog deployed with owner defaults on; source/public defaults remain off.'
+Write-Output 'Waffle House completed changes deployed with owner flight and transmog defaults on; source/public defaults remain off.'

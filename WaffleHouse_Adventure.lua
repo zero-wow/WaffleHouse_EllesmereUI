@@ -628,6 +628,22 @@ function addon.BuildAdventurePage(parent, yOffset)
         }
     ); y = y - h
 
+    _, h = W:DualRow(parent, y,
+        {
+            type = "toggle",
+            text = "Show Instant Outfit Button",
+            tooltip = "Show a movable wardrobe button. Click to choose another unlocked saved outfit now, even if timed switching is off; Shift-drag to reposition. Its glowing channel fills toward the next automatic outfit attempt and briefly surges on a confirmed manual change. Off by default on public installs.",
+            getValue = function()
+                return GetSettings().randomTransmogButtonEnabled == true
+            end,
+            setValue = function(value)
+                GetSettings().randomTransmogButtonEnabled = value == true
+                if addon.RefreshRandomTransmogButton then addon.RefreshRandomTransmogButton() end
+            end,
+        },
+        nil
+    ); y = y - h
+
     _, h = W:SectionHeader(parent, "DELVE COMPANION", y); y = y - h
     _, h = W:DualRow(parent, y,
         {

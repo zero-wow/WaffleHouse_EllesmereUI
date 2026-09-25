@@ -2,7 +2,7 @@ local source = arg[1] or "WaffleHouse_RandomTransmog.lua"
 local settings = { randomTransmogEnabled = false, randomTransmogInterval = "5" }
 local addon = { GetSettings = function() return settings end }
 local state = {}
-local now, frame = 0, nil
+local now, frame, button = 0, nil, nil
 local timers, changes = {}, {}
 local activeID = 1
 local entries = {
@@ -13,7 +13,32 @@ local entries = {
     { outfitID = 5, name = "Locked", isDisabled = false, isEventOutfit = false },
 }
 
-CreateFrame = function()
+GetTime = function() return now end
+UIParent = { GetCenter = function() return 500, 400 end }
+IsShiftKeyDown = function() return false end
+CreateFrame = function(kind)
+    if kind == "Button" then
+        button = {
+            SetSize = function() end, SetFrameStrata = function() end,
+            SetMovable = function() end, SetClampedToScreen = function() end,
+            RegisterForClicks = function() end, RegisterForDrag = function() end,
+            ClearAllPoints = function() end, SetPoint = function() end,
+            Show = function(self) self.visible = true end,
+            Hide = function(self) self.visible = false; if self.OnHide then self:OnHide() end end,
+            StopMovingOrSizing = function() end,
+            SetScript = function(self, event, handler) self[event] = handler end,
+            CreateTexture = function()
+                return {
+                    SetAllPoints = function() end, SetTexture = function() end,
+                    SetBlendMode = function() end, SetVertexColor = function() end,
+                    SetSize = function() end, SetPoint = function() end,
+                    SetRotation = function() end,
+                    SetAlpha = function(self, value) self.alpha = value end,
+                }
+            end,
+        }
+        return button
+    end
     frame = {
         RegisterEvent = function() end,
         SetScript = function(self, _, handler) self.OnEvent = handler end,
@@ -125,5 +150,24 @@ settings.randomTransmogEnabled = false
 addon.RefreshRandomTransmog()
 advance(600)
 assert(#changes == 3, "turning off must invalidate outstanding timers")
+
+settings.randomTransmogButtonEnabled = true
+addon.RefreshRandomTransmogButton()
+assert(button and button.visible and #button.ticks == 32, "instant button must have a visible channel")
+settings.randomTransmogEnabled = true
+addon.RefreshRandomTransmog()
+advance(150)
+button:OnUpdate(0.2)
+assert(button.ticks[1].alpha > 0 and button.ticks[16].alpha > 0
+    and button.ticks[32].alpha == 0, "channel must fill toward the next auto attempt")
+settings.randomTransmogEnabled = false
+addon.RefreshRandomTransmog()
+activeID = 1
+button:OnClick()
+assert(#changes == 4 and changes[4] == 2, "button must switch immediately, even with timed changes off")
+for _ = 1, 20 do button:OnUpdate(0.1) end
+assert(button.manualProgress == false, "confirmed manual switch must finish its animation")
+state.combat = true
+assert(addon.RandomizeTransmogNow() == false and #changes == 4, "manual switch must honor combat safety")
 
 print("random_transmog_test: ok")

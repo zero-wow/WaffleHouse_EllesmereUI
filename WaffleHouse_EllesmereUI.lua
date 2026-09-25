@@ -164,6 +164,11 @@ local function GetSettings()
         WaffleHouseDB.randomTransmogEnabled = metadata
             and metadata(ADDON_FOLDER, "X-WaffleHouse-RandomTransmogDefault") == "1" or false
     end
+    if WaffleHouseDB.randomTransmogButtonEnabled == nil then
+        local metadata = C_AddOns and C_AddOns.GetAddOnMetadata
+        WaffleHouseDB.randomTransmogButtonEnabled = metadata
+            and metadata(ADDON_FOLDER, "X-WaffleHouse-RandomTransmogButtonDefault") == "1" or false
+    end
     local transmogInterval = tostring(WaffleHouseDB.randomTransmogInterval or "30")
     if transmogInterval ~= "5" and transmogInterval ~= "15" and transmogInterval ~= "30"
         and transmogInterval ~= "60" and transmogInterval ~= "120" and transmogInterval ~= "240" then
@@ -1253,6 +1258,8 @@ local function RegisterOptionsPage()
     end
     return true
 end
+
+addon.EnsureOptionsRegistered = RegisterOptionsPage
 
 local function StartOptionsRegistration()
     InstallSidebarEntry()

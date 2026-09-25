@@ -5,6 +5,7 @@
 ## Version: 0.1.0-dev.1
 ## X-WaffleHouse-FlightIndicatorDefault: 0
 ## X-WaffleHouse-RandomTransmogDefault: 0
+## X-WaffleHouse-RandomTransmogButtonDefault: 0
 ## Dependencies: EllesmereUI, EllesmereUIVendorBag
 ## OptionalDeps: EllesmereUIBlizzardSkin, ZygorGuidesViewer, EllesmereUIDataBars, EllesmereUIBags, LiteMount
 ## SavedVariables: WaffleHouseDB, EllesmereUI_WaffleHouseDB, EllesmereUI_QoLDB
@@ -34,3 +35,4 @@ WaffleHouse_Logo.lua
 WaffleHouse_VendorTracking.lua
 WaffleHouse_BuffCheck.lua
 WaffleHouse_BuffCheckUI.lua
+WaffleHouse_Slash.lua

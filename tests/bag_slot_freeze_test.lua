@@ -168,7 +168,7 @@ for _, fragment in ipairs({
     'MAX_SORT_MOVE_RETRIES',
     'TargetHasWantedItem',
     'HasUnfilledTarget',
-    'buttonText = "View Frozen Items"',
+    'buttonText = frozenSlotManagerOpen and "Hide Frozen Items" or "View Frozen Items"',
     '"FROZEN SLOT MANAGER"',
     'W:DropdownWithOffsets',
     'IsMainBagsButton(button)',

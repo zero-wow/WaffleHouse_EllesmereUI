@@ -727,10 +727,15 @@ function addon.BuildBagsPage(parent, yOffset)
         {
             type = "labeledButton",
             text = "Frozen Slots",
-            buttonText = "View Frozen Items",
-            tooltip = "Hold the selected modifier over Main Bags and left-click an item to toggle its frozen slot. View Frozen Items opens the inline manager; Save applies its changes and Cancel discards them.",
+            buttonText = frozenSlotManagerOpen and "Hide Frozen Items" or "View Frozen Items",
+            tooltip = "Hold the selected modifier over Main Bags and left-click an item to toggle its frozen slot. Click again to close the inline manager without saving; Save applies its changes and Cancel discards them.",
             onClick = function()
-                StartFrozenSlotManagerDraft()
+                if frozenSlotManagerOpen then
+                    frozenSlotManagerDraft = nil
+                    frozenSlotManagerOpen = false
+                else
+                    StartFrozenSlotManagerDraft()
+                end
                 Rebuild()
             end,
         }
