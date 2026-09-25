@@ -6,15 +6,15 @@ addon.AutoMountLocationTypes = {
     { key = "world", label = "Allow Open World",
       tooltip = "Includes cities and outdoor world zones. The existing outdoors, stationary, and safety checks still apply." },
     { key = "dungeon", label = "Allow Dungeons",
-      tooltip = "Allow an automatic mount after combat in dungeon instances where the game permits mounting." },
+      tooltip = "Allow automatic mounting in dungeon instances where the game permits it." },
     { key = "raid", label = "Allow Raids",
-      tooltip = "Allow an automatic mount after combat in raid instances where the game permits mounting." },
+      tooltip = "Allow automatic mounting in raid instances where the game permits it." },
     { key = "delve", label = "Allow Delves",
       tooltip = "Delves are recognized separately from other scenarios by their instance difficulty." },
     { key = "scenario", label = "Allow Other Scenarios",
       tooltip = "Scenarios other than delves, including solo story scenarios." },
     { key = "pvp", label = "Allow Battlegrounds & Arenas",
-      tooltip = "Allow automatic mounting after combat in battlegrounds and arenas when permitted." },
+      tooltip = "Allow automatic mounting in battlegrounds and arenas when permitted." },
     { key = "housing", label = "Allow Housing",
       tooltip = "Housing neighborhoods and interiors. Indoor areas remain blocked by the existing outdoors check." },
     { key = "other", label = "Allow Other Instances",
@@ -76,40 +76,86 @@ local function CanAutoMount()
     return C_MountJournal and type(C_MountJournal.SummonByID) == "function"
 end
 
+local ticker
+local lastMounted
+local respectDismount = false
+local nextAttemptAt = 0
+local attemptToken = 0
+local sawCombat = false
+
+local function ObserveMountState()
+    local mounted = IsMounted()
+    if lastMounted and not mounted and not InCombatLockdown() then
+        respectDismount = true
+    end
+    lastMounted = mounted
+    if mounted then nextAttemptAt = 0 end
+end
+
 local function TryAutoMount()
+    ObserveMountState()
     local settings = addon.GetSettings and addon.GetSettings()
     if not settings or settings.autoMountAfterCombat ~= true
-        or not addon.IsAutoMountLocationAllowed(settings) or not CanAutoMount() then return end
+        or respectDismount or not addon.IsAutoMountLocationAllowed(settings)
+        or not CanAutoMount() or GetTime() < nextAttemptAt then return end
 
     local mountID = 0
     if settings.autoMountProvider ~= "wow" then
         local selectedID, available = PickLiteMountID()
         if available then
-            if not selectedID then return end
+            if not selectedID then
+                nextAttemptAt = GetTime() + 12
+                return
+            end
             mountID = selectedID
         end
     end
-    -- A single attempt only: failed/forbidden summons are not retried or
-    -- queued, and the player can always use their normal mount key instead.
+    -- Some areas reject mounts even outdoors. Retry slowly instead of
+    -- hammering the journal every tick if the summon does not take.
+    nextAttemptAt = GetTime() + 12
     C_MountJournal.SummonByID(mountID)
 end
 
-local sawCombat = false
-local attemptToken = 0
+function addon.RefreshAutoMount()
+    local settings = addon.GetSettings and addon.GetSettings()
+    local enabled = settings and settings.autoMountAfterCombat == true
+    attemptToken = attemptToken + 1
+    if not enabled then
+        if ticker then ticker:Cancel(); ticker = nil end
+        return
+    end
+    if not ticker then
+        lastMounted = IsMounted()
+        respectDismount = false
+        nextAttemptAt = 0
+        ticker = C_Timer.NewTicker(2, TryAutoMount)
+    end
+    local token = attemptToken
+    C_Timer.After(0.35, function()
+        if token == attemptToken then TryAutoMount() end
+    end)
+end
+
 local events = CreateFrame("Frame")
+events:RegisterEvent("PLAYER_LOGIN")
+events:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED")
 events:RegisterEvent("PLAYER_REGEN_DISABLED")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:SetScript("OnEvent", function(_, event)
-    if event == "PLAYER_REGEN_DISABLED" then
+    if event == "PLAYER_LOGIN" then
+        addon.RefreshAutoMount()
+    elseif event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
+        ObserveMountState()
+    elseif event == "PLAYER_REGEN_DISABLED" then
         sawCombat = true
         attemptToken = attemptToken + 1
     elseif sawCombat then
         sawCombat = false
-        attemptToken = attemptToken + 1
-        local token = attemptToken
-        -- Let lockdown end and allow the mount journal to settle after combat.
-        C_Timer.After(0.35, function()
-            if token == attemptToken then TryAutoMount() end
-        end)
+        respectDismount = false
+        -- A mount lost during combat is not an out-of-combat manual dismount,
+        -- even if its display-change event was missed.
+        lastMounted = IsMounted()
+        nextAttemptAt = 0
+        addon.RefreshAutoMount()
     end
 end)

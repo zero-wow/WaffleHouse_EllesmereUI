@@ -433,13 +433,14 @@ function addon.BuildAdventurePage(parent, yOffset)
     _, h = W:DualRow(parent, y,
         {
             type = "toggle",
-            text = "Auto Mount After Combat",
-            tooltip = "Once after you leave combat, try to summon a mount if you are outdoors, alive, stationary, and not already mounted or casting. This is off by default. Mounting can still fail where the game forbids it.",
+            text = "Auto Mount Out of Combat",
+            tooltip = "When you are unmounted and out of combat, try to mount if you are outdoors, alive, stationary, and not casting. A manual dismount is respected until your next combat ends. Failed summons retry slowly. This is off by default, and mounting can still fail where the game forbids it.",
             getValue = function()
                 return GetSettings().autoMountAfterCombat == true
             end,
             setValue = function(value)
                 GetSettings().autoMountAfterCombat = value == true
+                if addon.RefreshAutoMount then addon.RefreshAutoMount() end
             end,
         },
         {
