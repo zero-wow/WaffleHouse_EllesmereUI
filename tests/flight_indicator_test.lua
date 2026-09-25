@@ -201,19 +201,28 @@ event("MODIFIER_STATE_CHANGED")
 assert(badge.mouse == true, "holding Ctrl must enable wheel resizing")
 assert(badge.mouseWheel == true, "holding Ctrl must enable the mouse wheel")
 badge.scripts.OnMouseWheel(badge, 1)
-assert(settings.flightIndicatorSize == "large" and badge.width == 132,
-    "Ctrl+wheel up must enlarge and save the full emblem size")
+assert(settings.flightIndicatorEmblemWidth == 112 and badge.width == 112,
+    "Ctrl+wheel up must enlarge the emblem in fine pixel steps")
 badge.scripts.OnMouseWheel(badge, 1)
-assert(settings.flightIndicatorSize == "large", "wheel size must stop at Large")
+assert(settings.flightIndicatorEmblemWidth == 120 and badge.width == 120,
+    "a second wheel tick must keep enlarging beyond the old presets")
 badge.scripts.OnMouseWheel(badge, -1)
-badge.scripts.OnMouseWheel(badge, -1)
-badge.scripts.OnMouseWheel(badge, -1)
-assert(settings.flightIndicatorSize == "small" and badge.width == 76,
-    "Ctrl+wheel down must shrink and stop at Small")
+assert(settings.flightIndicatorEmblemWidth == 112 and badge.width == 112,
+    "Ctrl+wheel down must shrink in fine pixel steps")
+addon.SetFlightIndicatorWidth("emblem", 256)
 badge.scripts.OnMouseWheel(badge, 1)
+assert(settings.flightIndicatorEmblemWidth == 256 and badge.width == 256,
+    "emblem must reach but not exceed its native artwork width")
+addon.SetFlightIndicatorWidth("emblem", 76)
+badge.scripts.OnMouseWheel(badge, -1)
+assert(settings.flightIndicatorEmblemWidth == 76 and badge.width == 76,
+    "emblem resizing must stop at the supported minimum")
+addon.SetFlightIndicatorWidth("emblem", 104)
 addon.RefreshFlightIndicator()
-assert(settings.flightIndicatorSize == "medium" and badge.width == 104,
+assert(settings.flightIndicatorEmblemWidth == 104 and badge.width == 104,
     "wheel-selected size must survive a refresh")
+settings.flightIndicatorEmblemWidth = nil
+addon.RefreshFlightIndicator()
 control = false
 event("MODIFIER_STATE_CHANGED")
 assert(badge.mouse == false, "releasing Ctrl must restore click-through behavior")
@@ -422,6 +431,16 @@ end
 ornamentsFit("small")
 ornamentsFit("medium")
 ornamentsFit("large")
+addon.SetFlightIndicatorWidth("emblem", 256)
+assert(badge.width == 256 and badge.height == 256 and badge.icon.width == 256,
+    "full emblem and its art must reach the native 256px image size")
+for _, gem in ipairs(badge.chargeGems) do
+    local diamondHalf = gem.glow.width * math.sqrt(2) / 2
+    assert(math.abs(gem.glow.x) + diamondHalf <= badge.width / 2 + 0.001
+        and math.abs(gem.glow.y) + diamondHalf <= badge.height / 2 + 0.001,
+        "full-size emblem jewels must remain inside the artwork")
+end
+settings.flightIndicatorEmblemWidth = nil
 
 settings.flightIndicatorLayout = "compact"
 settings.flightIndicatorSize = "medium"
@@ -432,11 +451,16 @@ assert(badge.width == 132 and badge.height == 56
 control = true
 event("MODIFIER_STATE_CHANGED")
 badge.scripts.OnMouseWheel(badge, -1)
-assert(settings.flightIndicatorSize == "small" and badge.width == 114 and badge.height == 48,
-    "Ctrl+wheel must also resize the rounded compact layout")
+assert(settings.flightIndicatorCompactWidth == 120 and badge.width == 120
+    and math.abs(badge.height - 120 * 56 / 132) < 0.001,
+    "Ctrl+wheel must resize the whole rounded compact layout proportionally")
 badge.scripts.OnMouseWheel(badge, 1)
+assert(settings.flightIndicatorCompactWidth == 132 and badge.width == 132,
+    "compact resizing must return to the prior width without changing the emblem")
 control = false
 event("MODIFIER_STATE_CHANGED")
+settings.flightIndicatorCompactWidth = nil
+addon.RefreshFlightIndicator()
 assert(badge.housing.path:find("compact%-steady%.png")
     and badge.housing.alpha == 1 and badge.icon.path:find("flight%-16%.png")
     and not badge.label,
@@ -491,6 +515,25 @@ UIParent.GetCenter = function() return 320, 240 end
 addon.RefreshFlightIndicator()
 assert(badge.x == -76 and badge.y == 38,
     "compact default must stay beside the launcher on a small screen")
+addon.SetFlightIndicatorWidth("compact", 462)
+assert(badge.width == 462 and math.abs(badge.height - 462 * 56 / 132) < 0.001
+    and badge.icon.width <= 256 and badge.creature.width <= 256,
+    "maximum compact size must scale panel and creature without upsampling the 256px art")
+assert(badge.x - badge.width / 2 >= -320
+    and badge.x + badge.width / 2 <= 320
+    and badge.y - badge.height / 2 >= -240
+    and badge.y + badge.height / 2 <= 240,
+    "maximum compact size must stay entirely on a 640x480 screen")
+assert(badge.x - badge.width / 2 >= -320 + 170 + 8 - 0.001,
+    "maximum compact panel must leave the radar launcher's outside gutter")
+for _, gem in ipairs(badge.chargeGems) do
+    local diamondHalf = gem.glow.width * math.sqrt(2) / 2
+    assert(math.abs(gem.glow.x) + diamondHalf <= badge.width / 2 + 0.001
+        and math.abs(gem.glow.y) + diamondHalf <= badge.height / 2 + 0.001,
+        "maximum compact jewels must remain inside the panel")
+end
+settings.flightIndicatorCompactWidth = nil
+addon.RefreshFlightIndicator()
 settings.flightIndicatorCompactX, settings.flightIndicatorCompactY = -1000, 1000
 addon.RefreshFlightIndicator()
 assert(math.abs(badge.x) <= (640 - badge.width) / 2

@@ -50,11 +50,16 @@ local SWITCH_SPELLS = { [436854] = true, [460002] = true, [460003] = true }
 -- Try both because one may not be available until the player mounts.
 local CHARGE_SPELLS = { 372608, 372610 }
 local SIZES = { small = 76, medium = 104, large = 132 }
-local SIZE_ORDER = { "small", "medium", "large" }
 -- Two matching, short painted panels keep the lettering part of the artwork.
 -- The medallion rises past the capsule edge and retains the live creature art.
 local COMPACT_SIZES = {
     small = { 114, 48 }, medium = { 132, 56 }, large = { 156, 66 },
+}
+-- The full emblem art is 256px square; the 2048px compact panel has ample
+-- resolution, while its medallion stays below the creature art's 256px size.
+local SIZE_LIMITS = {
+    emblem = { min = 76, max = 256, wheel = 8, setting = "flightIndicatorEmblemWidth" },
+    compact = { min = 114, max = 462, wheel = 12, setting = "flightIndicatorCompactWidth" },
 }
 local COMPACT_PANELS = {
     classic = {
@@ -87,6 +92,32 @@ end
 local function SafeNumber(value)
     return (not issecretvalue or not issecretvalue(value))
         and type(value) == "number" and value == value
+end
+
+local function GetIndicatorWidth(settings, layout)
+    layout = layout == "compact" and "compact" or "emblem"
+    local limits = SIZE_LIMITS[layout]
+    local saved = tonumber(settings[limits.setting])
+    if SafeNumber(saved) then
+        return math.max(limits.min, math.min(limits.max, saved))
+    end
+    local sizes = layout == "compact" and COMPACT_SIZES or SIZES
+    local preset = sizes[settings.flightIndicatorSize] or sizes.medium
+    return layout == "compact" and preset[1] or preset
+end
+
+function addon.GetFlightIndicatorWidth(layout)
+    local settings = addon.GetSettings and addon.GetSettings()
+    return settings and GetIndicatorWidth(settings, layout)
+end
+
+function addon.SetFlightIndicatorWidth(layout, value)
+    local settings = addon.GetSettings and addon.GetSettings()
+    if not settings or not SafeNumber(value) then return end
+    layout = layout == "compact" and "compact" or "emblem"
+    local limits = SIZE_LIMITS[layout]
+    settings[limits.setting] = math.floor(math.max(limits.min, math.min(limits.max, value)) + 0.5)
+    addon.RefreshFlightIndicator()
 end
 
 local function ReadSkyridingCharges()
@@ -182,6 +213,17 @@ local function PositionOrnaments()
         -- placing tiny blue/gold sparks over its painted sky and lettering.
         local y = -height * 0.38
         local socketSize = math.min(height * 0.15, step * 0.67)
+        local glowHalf = socketSize * 1.25 * math.sqrt(2) / 2
+        if left + step * 5 + glowHalf > width / 2 - 5 then
+            step = math.max(0, (width / 2 - 5 - glowHalf - left) / 5)
+            socketSize = math.min(height * 0.15, step * 0.67)
+        end
+        -- At larger custom sizes the old 15%-height jewels would extend
+        -- beyond the capsule's lower edge. Keep a gradually wider gutter.
+        local verticalGutter = 5 * math.max(0, math.min(1, (height - 66) / 130))
+        local verticalLimit = (height / 2 - math.abs(y) - verticalGutter)
+            * 2 / (1.25 * math.sqrt(2))
+        socketSize = math.min(socketSize, math.max(0, verticalLimit))
         for index, gem in ipairs(badge.chargeGems) do
             for _, part in ipairs({ gem.glow, gem.shadow, gem.bezel, gem.core }) do
                 part:ClearAllPoints()
@@ -364,20 +406,13 @@ local function CreateBadge()
     end)
     badge:SetScript("OnMouseWheel", function(_, direction)
         if not IsControlKeyDown() or direction == 0 then return end
-        local settings = addon.GetSettings()
-        local current = settings.flightIndicatorSize
-        for index, size in ipairs(SIZE_ORDER) do
-            if current == size then
-                local nextIndex = math.max(1, math.min(#SIZE_ORDER, index + (direction > 0 and 1 or -1)))
-                if nextIndex ~= index then
-                    settings.flightIndicatorSize = SIZE_ORDER[nextIndex]
-                    addon.RefreshFlightIndicator()
-                end
-                return
-            end
-        end
-        settings.flightIndicatorSize = "medium"
-        addon.RefreshFlightIndicator()
+        local layout = badge.layout
+        local limits = SIZE_LIMITS[layout]
+        local width = addon.GetFlightIndicatorWidth(layout)
+        if not width then return end
+        local nextWidth = math.max(limits.min, math.min(limits.max,
+            width + (direction > 0 and limits.wheel or -limits.wheel)))
+        if nextWidth ~= width then addon.SetFlightIndicatorWidth(layout, nextWidth) end
     end)
     badge:SetScript("OnHide", function(self)
         self:StopMovingOrSizing()
@@ -716,12 +751,16 @@ function addon.RefreshFlightIndicator()
 
     if not badge then CreateBadge() end
     badge.layout = settings.flightIndicatorLayout == "compact" and "compact" or "emblem"
-    local sizes = badge.layout == "compact" and COMPACT_SIZES or SIZES
-    local size = sizes[settings.flightIndicatorSize] or sizes.medium
     if badge.layout == "compact" then
-        badge:SetSize(size[1], size[2])
+        local width = GetIndicatorWidth(settings, "compact")
+        local preset = COMPACT_SIZES[settings.flightIndicatorSize] or COMPACT_SIZES.medium
+        local custom = tonumber(settings.flightIndicatorCompactWidth)
+        local height = SafeNumber(custom) and width * COMPACT_SIZES.medium[2] / COMPACT_SIZES.medium[1]
+            or preset[2]
+        badge:SetSize(width, height)
     else
-        badge:SetSize(size, size)
+        local width = GetIndicatorWidth(settings, "emblem")
+        badge:SetSize(width, width)
     end
     PositionArtwork()
     PositionOrnaments()

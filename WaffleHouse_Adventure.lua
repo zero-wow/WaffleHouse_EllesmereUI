@@ -496,7 +496,7 @@ function addon.BuildAdventurePage(parent, yOffset)
         {
             type = "toggle",
             text = "Show Flight Style Indicator",
-            tooltip = "Show the illustrated Skyriding or Steady Flight emblem. Choose its original size or a much smaller version with the same art and animation. Hold Shift and drag either layout to move it; hold Ctrl and scroll over it to change size. An interrupted Switch Flight Style cast restores the original state. Off by default on public installs.",
+            tooltip = "Show the illustrated Skyriding or Steady Flight emblem. Hold Shift and drag either layout to move it; hold Ctrl and scroll over it to scale it. The two layouts remember their own sizes. An interrupted Switch Flight Style cast restores the original state. Off by default on public installs.",
             getValue = function()
                 return GetSettings().flightIndicatorEnabled == true
             end,
@@ -523,19 +523,36 @@ function addon.BuildAdventurePage(parent, yOffset)
 
     _, h = W:DualRow(parent, y,
         {
-            type = "dropdown",
-            text = "Indicator Size",
-            values = { small = "Small", medium = "Medium", large = "Large" },
-            order = { "small", "medium", "large" },
-            tooltip = "Size of the flight indicator in either layout. You can also hold Ctrl and scroll over the indicator to step between Small, Medium, and Large.",
+            type = "slider",
+            text = "Emblem Size",
+            min = 76,
+            max = 256,
+            step = 4,
+            tooltip = "Width of the full flight emblem in pixels, up to the artwork's native 256px size. Ctrl+scroll over the full emblem changes this independently.",
             getValue = function()
-                return GetSettings().flightIndicatorSize
+                return addon.GetFlightIndicatorWidth and addon.GetFlightIndicatorWidth("emblem") or 104
             end,
             setValue = function(value)
-                GetSettings().flightIndicatorSize = value
-                if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
+                if addon.SetFlightIndicatorWidth then addon.SetFlightIndicatorWidth("emblem", value) end
             end,
         },
+        {
+            type = "slider",
+            text = "Compact Size",
+            min = 114,
+            max = 462,
+            step = 6,
+            tooltip = "Width of the rounded compact panel in pixels. Its painted lettering, medallion, gems, and cast marks scale with it. Ctrl+scroll over the compact panel changes this independently.",
+            getValue = function()
+                return addon.GetFlightIndicatorWidth and addon.GetFlightIndicatorWidth("compact") or 132
+            end,
+            setValue = function(value)
+                if addon.SetFlightIndicatorWidth then addon.SetFlightIndicatorWidth("compact", value) end
+            end,
+        }
+    ); y = y - h
+
+    _, h = W:DualRow(parent, y,
         {
             type = "toggle",
             text = "Skyriding Charges",
@@ -547,10 +564,7 @@ function addon.BuildAdventurePage(parent, yOffset)
                 GetSettings().flightIndicatorCharges = value == true
                 if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
             end,
-        }
-    ); y = y - h
-
-    _, h = W:DualRow(parent, y,
+        },
         {
             type = "toggle",
             text = "Cast Progress",
@@ -562,7 +576,10 @@ function addon.BuildAdventurePage(parent, yOffset)
                 GetSettings().flightIndicatorCastProgress = value == true
                 if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
             end,
-        },
+        }
+    ); y = y - h
+
+    _, h = W:DualRow(parent, y,
         {
             type = "dropdown",
             text = "Compact Panel Theme",
@@ -576,7 +593,8 @@ function addon.BuildAdventurePage(parent, yOffset)
                 GetSettings().flightIndicatorCompactTheme = value
                 if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
             end,
-        }
+        },
+        nil
     ); y = y - h
 
     _, h = W:SectionHeader(parent, "RANDOM TRANSMOG", y); y = y - h
