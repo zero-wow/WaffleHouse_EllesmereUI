@@ -168,6 +168,12 @@ local function GetSettings()
     if WaffleHouseDB.flightIndicatorSize ~= "small" and WaffleHouseDB.flightIndicatorSize ~= "large" then
         WaffleHouseDB.flightIndicatorSize = "medium"
     end
+    if WaffleHouseDB.flightIndicatorCharges == nil then
+        WaffleHouseDB.flightIndicatorCharges = true
+    end
+    if WaffleHouseDB.flightIndicatorCastProgress == nil then
+        WaffleHouseDB.flightIndicatorCastProgress = true
+    end
     if WaffleHouseDB.autoMountProvider ~= "litemount" and WaffleHouseDB.autoMountProvider ~= "wow" then
         WaffleHouseDB.autoMountProvider = "auto"
     end
@@ -837,7 +843,7 @@ local function BuildOptionsConfig()
     return {
         title = "Waffle House",
         description = "|cff7f7f7fEnhancing your |r|cff18d19eEllesmereUI|r|cff7f7f7f with |r|cff6fe4cbQuality of Life|r|cff7f7f7f Goodness...|r",
-        searchTerms = "vendor bag merchant currency cost legend shopping list easy access item view list rows frozen slot freeze modifier lock sort main bags frosted marker recent items new item highlight acquired items interact key ignored vendor npc ethereal soul trader tool rack chooser choice celestial carver energy splinter arcanic precision empyrean zapper primary stat haste mastery critical strike companion pet summon wonderbar databar data bar drag reorder entries item queue zygor automation auto skip quest gossip dialogue campaign cinematic repair sell junk modifier reverse mode buff check raid party missing assignment beacon earth shield fortitude intellect skyfury bronze buff frame anchor collapse expand own cast timer rules adventure ritual ritual sites delve delves dungeon dungeons raid raids trusty delve companion valeera sanguinar curio curios combat utility bilespear dreamcatcher mute voice dialogue sound auto mount after combat litemount random favorite resource protection resource watch addon cpu performance warning slow addon nameplate cvar protector friendly npcs guardians minions pets",
+        searchTerms = "vendor bag merchant currency cost legend shopping list easy access item view list rows frozen slot freeze modifier lock sort main bags frosted marker recent items new item highlight acquired items interact key ignored vendor npc ethereal soul trader tool rack chooser choice celestial carver energy splinter arcanic precision empyrean zapper primary stat haste mastery critical strike companion pet summon wonderbar databar data bar drag reorder entries item queue zygor automation auto skip quest gossip dialogue campaign cinematic repair sell junk modifier reverse mode buff check raid party missing assignment beacon earth shield fortitude intellect skyfury bronze buff frame anchor collapse expand own cast timer rules adventure ritual ritual sites delve delves dungeon dungeons raid raids trusty delve companion valeera sanguinar curio curios combat utility bilespear dreamcatcher mute voice dialogue sound auto mount after combat litemount random favorite flight indicator skyriding charges jewels cast progress resource protection resource watch addon cpu performance warning slow addon nameplate cvar protector friendly npcs guardians minions pets",
         pages = { "General", "Adventure", "Automation", "Bags", "Item Queue", "Vendor" },
         buildPage = function(pageName, parent, yOffset)
             if pageName == "Adventure" then

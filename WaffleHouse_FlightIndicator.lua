@@ -46,8 +46,14 @@ for index, name in ipairs(BASE_CREATURE) do
     end
 end
 local SWITCH_SPELLS = { [436854] = true, [460002] = true, [460003] = true }
+-- Surge Forward and Skyward Ascent use the same six-charge pool in Midnight.
+-- Try both because one may not be available until the player mounts.
+local CHARGE_SPELLS = { 372608, 372610 }
 local SIZES = { small = 76, medium = 104, large = 132 }
 local DEFAULT_X, DEFAULT_Y = 0, 180
+local WHITE = "Interface\\Buttons\\WHITE8X8"
+local GEM_ANGLES = { 30, 90, 150, 210, 270, 330 }
+local CAST_TICKS = 12
 
 local badge
 local animation
@@ -59,6 +65,36 @@ end
 local function SmoothStep(value)
     value = Clamp01(value)
     return value * value * (3 - 2 * value)
+end
+
+local function SafeNumber(value)
+    return (not issecretvalue or not issecretvalue(value))
+        and type(value) == "number" and value == value
+end
+
+local function ReadSkyridingCharges()
+    if not (C_Spell and type(C_Spell.GetSpellCharges) == "function") then return end
+    for _, spellID in ipairs(CHARGE_SPELLS) do
+        local ok, info = pcall(C_Spell.GetSpellCharges, spellID)
+        if ok and info and (not issecretvalue or not issecretvalue(info)) then
+            local okFields, state = pcall(function()
+                local count, maximum = info.currentCharges, info.maxCharges
+                if not (SafeNumber(count) and SafeNumber(maximum))
+                    or maximum < 1 or maximum > 6 or count < 0 or count > maximum
+                    or count ~= math.floor(count) or maximum ~= math.floor(maximum) then return end
+                local start, duration, rate = info.cooldownStartTime,
+                    info.cooldownDuration, info.chargeModRate
+                if not (SafeNumber(start) and SafeNumber(duration))
+                    or start <= 0 or duration <= 0 then
+                    start, duration = nil, nil
+                end
+                if not SafeNumber(rate) or rate <= 0 then rate = 1 end
+                return { count = count, maximum = maximum,
+                    start = start, duration = duration, rate = rate }
+            end)
+            if okFields and state then return state end
+        end
+    end
 end
 
 -- Read the same start/end timestamps used by Blizzard's cast bar. Only trust
@@ -111,6 +147,28 @@ local function PositionBadge(settings)
     badge:SetPoint("CENTER", UIParent, "CENTER", x, y)
 end
 
+local function PositionOrnaments()
+    local size = badge:GetWidth()
+    for index, gem in ipairs(badge.chargeGems) do
+        local angle = math.rad(GEM_ANGLES[index])
+        local x, y = size * 0.43 * math.cos(angle), size * 0.43 * math.sin(angle)
+        for _, part in ipairs({ gem.glow, gem.bezel, gem.core }) do
+            part:ClearAllPoints()
+            part:SetPoint("CENTER", badge, "CENTER", x, y)
+        end
+        gem.glow:SetSize(size * 0.09, size * 0.09)
+        gem.bezel:SetSize(size * 0.075, size * 0.075)
+        gem.core:SetSize(size * 0.048, size * 0.048)
+    end
+    for index, tick in ipairs(badge.castTicks) do
+        local angle = math.rad(90 - (index - 1) * 360 / CAST_TICKS)
+        tick:ClearAllPoints()
+        tick:SetPoint("CENTER", badge, "CENTER",
+            size * 0.32 * math.cos(angle), size * 0.32 * math.sin(angle))
+        tick:SetSize(math.max(1, size * 0.017), size * 0.052)
+    end
+end
+
 local function CreateBadge()
     badge = CreateFrame("Frame", "WaffleHouseFlightIndicator", UIParent)
     badge:SetSize(SIZES.medium, SIZES.medium)
@@ -134,6 +192,40 @@ local function CreateBadge()
     badge.original = badge:CreateTexture(nil, "ARTWORK", nil, 2)
     badge.original:SetAllPoints()
     badge.original:SetAlpha(0)
+
+    -- The painting remains the hero. Small inlaid jewels indicate the shared
+    -- charge pool; an inner set of restrained ticks appears only while casting.
+    badge.chargeGems = {}
+    for index = 1, #GEM_ANGLES do
+        local gem = {}
+        for _, part in ipairs({ "glow", "bezel", "core" }) do
+            local sublevel = part == "glow" and 2 or (part == "bezel" and 3 or 4)
+            local texture = badge:CreateTexture(nil, "OVERLAY", nil, sublevel)
+            texture:SetTexture(WHITE)
+            texture:SetRotation(math.pi / 4)
+            texture:SetAlpha(0)
+            gem[part] = texture
+        end
+        gem.glow:SetVertexColor(0.10, 0.85, 1)
+        gem.glow:SetBlendMode("ADD")
+        gem.bezel:SetVertexColor(0.82, 0.59, 0.28)
+        badge.chargeGems[index] = gem
+    end
+    badge.castTicks = {}
+    for index = 1, CAST_TICKS do
+        local tick = badge:CreateTexture(nil, "OVERLAY", nil, 2)
+        tick:SetTexture(WHITE)
+        tick:SetVertexColor(1, 0.72, 0.34)
+        tick:SetRotation(math.rad(90 - (index - 1) * 360 / CAST_TICKS) - math.pi / 2)
+        tick:SetAlpha(0)
+        badge.castTicks[index] = tick
+    end
+    PositionOrnaments()
+
+    badge.chargeTicker = CreateFrame("Frame", nil, badge)
+    badge.chargeTicker:SetAllPoints(badge)
+    badge.chargeTicker:EnableMouse(false)
+    badge.chargeTicker:Hide()
 
     -- Load the small sprite set before the first cast so its first reveal does
     -- not hitch while the game opens individual image files.
@@ -170,6 +262,121 @@ local function CreateBadge()
     end)
 end
 
+local function HideChargeGems()
+    for _, gem in ipairs(badge.chargeGems) do
+        gem.glow:SetAlpha(0)
+        gem.bezel:SetAlpha(0)
+        gem.core:SetAlpha(0)
+    end
+end
+
+local function RenderCastProgress(progress)
+    local settings = addon.GetSettings and addon.GetSettings()
+    local enabled = not settings or settings.flightIndicatorCastProgress ~= false
+    for index, tick in ipairs(badge.castTicks) do
+        local filled = Clamp01(progress * CAST_TICKS - index + 1)
+        tick:SetAlpha(enabled and (0.10 + 0.72 * filled) or 0)
+    end
+end
+
+local function HideCastProgress()
+    for _, tick in ipairs(badge.castTicks) do tick:SetAlpha(0) end
+end
+
+local function RenderChargeGems()
+    local state = badge.chargeState
+    if not state or badge.style ~= "skyriding" or animation then
+        HideChargeGems()
+        return
+    end
+    local now = GetTime()
+    local reveal = Clamp01((now - (badge.chargeRevealAt or now)) / 0.25)
+    local refill = 0
+    if state.count < state.maximum and state.start and state.duration then
+        refill = Clamp01((now - state.start) * state.rate / state.duration)
+    end
+    local pulse = Clamp01(1 - (now - (badge.chargePulseAt or -100)) / 0.35)
+    local takeoff = Clamp01(1 - (now - (badge.takeoffAt or -100)) / 0.45)
+    for index, gem in ipairs(badge.chargeGems) do
+        if index <= state.maximum then
+            local fill = index <= state.count and 1
+                or (index == state.count + 1 and refill or 0)
+            local flash = index == badge.chargePulseIndex and pulse or 0
+            gem.bezel:SetAlpha(0.88 * reveal)
+            gem.core:SetVertexColor(0.08 + 0.20 * fill,
+                0.22 + 0.68 * fill, 0.31 + 0.69 * fill)
+            gem.core:SetAlpha((0.64 + 0.36 * fill) * reveal)
+            gem.glow:SetAlpha((0.12 * fill + 0.42 * flash
+                + 0.24 * takeoff) * reveal)
+        else
+            gem.glow:SetAlpha(0)
+            gem.bezel:SetAlpha(0)
+            gem.core:SetAlpha(0)
+        end
+    end
+end
+
+local function RefreshChargeData()
+    if not badge or badge.style ~= "skyriding" or animation
+        or not badge.chargeTicker:IsShown() then return end
+    local state = ReadSkyridingCharges()
+    local old = badge.chargeState
+    badge.chargeState = state
+    if state and old and state.count ~= old.count then
+        badge.chargePulseAt = GetTime()
+        badge.chargePulseIndex = state.count > old.count and state.count or old.count
+    end
+    RenderChargeGems()
+end
+
+local function ReadFlyingMount()
+    if type(IsMounted) ~= "function" or type(IsFlying) ~= "function" then return end
+    local ok, flying = pcall(function()
+        local mounted, airborne = IsMounted(), IsFlying()
+        if issecretvalue and (issecretvalue(mounted) or issecretvalue(airborne)) then return end
+        return mounted == true and airborne == true
+    end)
+    if ok then return flying end
+end
+
+local function ChargeTickerOnUpdate(_, elapsed)
+    if not badge or badge.style ~= "skyriding" or animation then return end
+    badge.chargeTickElapsed = (badge.chargeTickElapsed or 0) + elapsed
+    if badge.chargeTickElapsed < 0.05 then return end
+    badge.chargePollElapsed = (badge.chargePollElapsed or 0) + badge.chargeTickElapsed
+    badge.chargeTickElapsed = 0
+    if badge.chargePollElapsed >= 0.30 then
+        badge.chargePollElapsed = 0
+        RefreshChargeData()
+    end
+    local flying = ReadFlyingMount()
+    if flying ~= nil then
+        if badge.wasFlying == false and flying then badge.takeoffAt = GetTime() end
+        badge.wasFlying = flying
+    end
+    RenderChargeGems()
+end
+
+local function SyncChargeMode()
+    local settings = addon.GetSettings and addon.GetSettings()
+    if badge.style == "skyriding" and settings
+        and settings.flightIndicatorCharges ~= false and not animation then
+        if not badge.chargeTicker:IsShown() then
+            badge.chargeRevealAt = GetTime()
+            badge.chargePollElapsed = 0
+            badge.chargeTickElapsed = 0
+            badge.wasFlying = ReadFlyingMount()
+        end
+        badge.chargeTicker:SetScript("OnUpdate", ChargeTickerOnUpdate)
+        badge.chargeTicker:Show()
+        RefreshChargeData()
+    else
+        badge.chargeTicker:Hide()
+        badge.chargeState = nil
+        HideChargeGems()
+    end
+end
+
 local function ShowStaticStyle(style)
     if not badge or not style then return end
     animation = nil
@@ -179,8 +386,10 @@ local function ShowStaticStyle(style)
     badge.blend:SetAlpha(0)
     badge.creature:SetAlpha(0)
     badge.original:SetAlpha(0)
+    HideCastProgress()
     badge.style = style
     badge:Show()
+    SyncChargeMode()
 end
 
 local function UpdateState()
@@ -205,6 +414,7 @@ local function RenderTransition()
     end
     local progress = Clamp01(
         (GetTime() - animation.startTime) / animation.duration)
+    RenderCastProgress(progress)
 
     -- The original authored emblems read cleanly from dragon to bird. Do not
     -- use the reverse-direction cutout morph here: its intermediate images
@@ -303,6 +513,8 @@ local function StartStyleCast(castGUID)
         startTime = startTime,
         duration = duration,
     }
+    badge.chargeTicker:Hide()
+    HideChargeGems()
     badge:SetScript("OnUpdate", RenderTransition)
     RenderTransition()
 end
@@ -343,6 +555,9 @@ function addon.RefreshFlightIndicator()
         animation = nil
         if badge then
             badge:SetScript("OnUpdate", nil)
+            badge.chargeTicker:Hide()
+            HideChargeGems()
+            HideCastProgress()
             badge:Hide()
         end
         return
@@ -352,12 +567,14 @@ function addon.RefreshFlightIndicator()
     local size = SIZES[settings.flightIndicatorSize] or SIZES.medium
     badge:SetSize(size, size)
     badge.creature:SetSize(size * 0.90, size * 0.90)
+    PositionOrnaments()
     PositionBadge(settings)
     badge:EnableMouse(IsShiftKeyDown())
 
     UpdateState()
     if badge.style then
         badge:Show()
+        SyncChargeMode()
     else
         -- No reliable aura read yet (for example login during combat).
         badge:Hide()
@@ -368,6 +585,7 @@ local events = CreateFrame("Frame")
 events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("PLAYER_ENTERING_WORLD")
 events:RegisterEvent("UNIT_AURA")
+events:RegisterEvent("SPELL_UPDATE_CHARGES")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
 events:RegisterEvent("UNIT_SPELLCAST_START")
 events:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
@@ -379,6 +597,10 @@ events:RegisterEvent("MODIFIER_STATE_CHANGED")
 events:RegisterEvent("UI_SCALE_CHANGED")
 events:RegisterEvent("DISPLAY_SIZE_CHANGED")
 events:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
+    if event == "SPELL_UPDATE_CHARGES" then
+        RefreshChargeData()
+        return
+    end
     if event == "UNIT_AURA" then
         if unit == "player" then UpdateState() end
         return

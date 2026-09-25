@@ -496,7 +496,7 @@ function addon.BuildAdventurePage(parent, yOffset)
         {
             type = "toggle",
             text = "Show Flight Style Indicator",
-            tooltip = "Show an illustrated Skyriding or Steady Flight badge. Hold Shift and drag the badge to move it. The five-second transformation follows the Switch Flight Style cast; an interrupted cast restores the original state. Off by default on public installs.",
+            tooltip = "Show an illustrated Skyriding or Steady Flight badge. Hold Shift and drag the badge to move it. Its transformation follows the live Switch Flight Style cast; an interrupted cast restores the original state. Charge jewels and cast progress can be toggled below. Off by default on public installs.",
             getValue = function()
                 return GetSettings().flightIndicatorEnabled == true
             end,
@@ -516,6 +516,33 @@ function addon.BuildAdventurePage(parent, yOffset)
             end,
             setValue = function(value)
                 GetSettings().flightIndicatorSize = value
+                if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
+            end,
+        }
+    ); y = y - h
+
+    _, h = W:DualRow(parent, y,
+        {
+            type = "toggle",
+            text = "Skyriding Charge Jewels",
+            tooltip = "Show the available shared Surge Forward / Skyward Ascent charges as six small jewels around the flight emblem. The next empty jewel fills as its charge recovers. The jewels hide in Steady Flight and whenever charge data is unavailable.",
+            getValue = function()
+                return GetSettings().flightIndicatorCharges ~= false
+            end,
+            setValue = function(value)
+                GetSettings().flightIndicatorCharges = value == true
+                if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
+            end,
+        },
+        {
+            type = "toggle",
+            text = "Cast Progress Arc",
+            tooltip = "Show a subtle inner arc tracking the actual Switch Flight Style cast. It vanishes when the cast completes or is interrupted.",
+            getValue = function()
+                return GetSettings().flightIndicatorCastProgress ~= false
+            end,
+            setValue = function(value)
+                GetSettings().flightIndicatorCastProgress = value == true
                 if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
             end,
         }

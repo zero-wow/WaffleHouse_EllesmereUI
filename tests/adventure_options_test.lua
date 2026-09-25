@@ -23,5 +23,11 @@ assert(adventure:find('local function SkinValeeraMuterButton()', 1, true), "Vale
 assert(adventure:find('button._waffleValeeraMuteText:SetText(muted and "Mute: ON" or "Mute: OFF")', 1, true),
     "muter button needs an owned text-only label")
 assert(adventure:find('muted and 0.05 or 0.66', 1, true), "muted status must use teal rather than red")
+assert(main:find('WaffleHouseDB.flightIndicatorCharges = true', 1, true)
+    and main:find('WaffleHouseDB.flightIndicatorCastProgress = true', 1, true),
+    "new flight visuals need explicit SavedVariable defaults")
+assert(adventure:find('text = "Skyriding Charge Jewels"', 1, true)
+    and adventure:find('text = "Cast Progress Arc"', 1, true),
+    "both flight visuals must be configurable in Adventure")
 
 io.write("Adventure options tests passed\n")

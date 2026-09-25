@@ -1,19 +1,32 @@
 local source = arg[1] or "WaffleHouse_FlightIndicator.lua"
-local settings = { flightIndicatorEnabled = true, flightIndicatorSize = "medium" }
+local settings = { flightIndicatorEnabled = true, flightIndicatorSize = "medium",
+    flightIndicatorCharges = true, flightIndicatorCastProgress = true }
 local addon = { GetSettings = function() return settings end }
 local aura, secret, shift, now = true, false, false, 0
+local chargeCount, chargeMaximum, chargeStart, chargeDuration = 4, 6, 0, 10
+local chargeAvailable, primaryChargeAvailable, chargeSecret = true, true, false
+local mounted, flying = false, false
 local activeCastGUID, activeSpellID, castStart, castDuration = nil, nil, 0, 5
-local eventFrame, badge
+local eventFrame, badge, chargeTicker
 local timers = {}
 
 GetTime = function() return now end
 IsShiftKeyDown = function() return shift end
-issecretvalue = function() return false end
+issecretvalue = function(value) return type(value) == "table" and value.secret == true end
 C_Secrets = { ShouldAurasBeSecret = function() return secret end }
 C_UnitAuras = { GetPlayerAuraBySpellID = function(spellID)
     assert(spellID == 404468)
     return aura and { spellId = spellID } or nil
 end }
+C_Spell = { GetSpellCharges = function(spellID)
+    assert(spellID == 372608 or spellID == 372610)
+    if not chargeAvailable or (spellID == 372608 and not primaryChargeAvailable) then return end
+    return { currentCharges = chargeSecret and { secret = true } or chargeCount,
+        maxCharges = chargeMaximum, cooldownStartTime = chargeStart,
+        cooldownDuration = chargeDuration, chargeModRate = 1 }
+end }
+IsMounted = function() return mounted end
+IsFlying = function() return flying end
 C_Timer = { After = function(delay, fn) timers[#timers + 1] = { due = now + delay, fn = fn } end }
 UnitCastingInfo = function()
     if not activeCastGUID then return end
@@ -39,6 +52,7 @@ local function NewFrame(name)
     function f:SetMovable() end
     function f:SetClampedToScreen() end
     function f:EnableMouse(value) self.mouse = value end
+    function f:SetAllPoints() end
     function f:ClearAllPoints() end
     function f:SetPoint(_, _, _, x, y) self.x, self.y = x, y end
     function f:GetCenter() return 960 + (self.x or 0), 540 + (self.y or 0) end
@@ -60,14 +74,17 @@ local function NewFrame(name)
         function texture:SetBlendMode(mode) self.blendMode = mode end
         function texture:SetRotation(angle) self.angle = angle end
         function texture:SetAlpha(alpha) self.alpha = alpha end
+        function texture:SetVertexColor(r, g, b) self.r, self.g, self.b = r, g, b end
         return texture
     end
     return f
 end
 
-CreateFrame = function(_, name)
+CreateFrame = function(_, name, parent)
     local frame = NewFrame(name)
-    if name == "WaffleHouseFlightIndicator" then badge = frame else eventFrame = frame end
+    if name == "WaffleHouseFlightIndicator" then badge = frame
+    elseif parent and parent == badge then chargeTicker = frame
+    else eventFrame = frame end
     return frame
 end
 
@@ -82,6 +99,9 @@ end
 local function advance(seconds)
     now = now + seconds
     if badge and badge.scripts.OnUpdate then badge.scripts.OnUpdate(badge, seconds) end
+    if chargeTicker and chargeTicker.shown and chargeTicker.scripts.OnUpdate then
+        chargeTicker.scripts.OnUpdate(chargeTicker, seconds)
+    end
     local pending = timers
     timers = {}
     for _, timer in ipairs(pending) do
@@ -133,6 +153,12 @@ assert(badge.icon.layer == "ARTWORK" and badge.blend.layer == "ARTWORK"
     "the transparent creature must draw above every sky and opaque emblem")
 assert(badge.icon.path:find("flight%-16%.png"), "steady badge should use last art frame")
 assert(badge.mouse == false, "badge must not block ordinary HUD clicks")
+assert(chargeTicker and not chargeTicker.shown,
+    "charge jewels must stay hidden in Steady Flight")
+for _, gem in ipairs(badge.chargeGems) do
+    assert(gem.core.alpha == 0 and gem.bezel.alpha == 0,
+        "Steady Flight must not leave charge jewels over the bird")
+end
 
 shift = true
 event("MODIFIER_STATE_CHANGED")
@@ -149,6 +175,8 @@ assert(badge.mouse == false, "releasing Shift must stop intercepting clicks")
 
 event("UNIT_SPELLCAST_START", "player", "cast-one", 460003)
 assert(badge.scripts.OnUpdate, "Switch Flight Style cast must begin the animation")
+assert(badge.castTicks[1].alpha > 0 and not chargeTicker.shown,
+    "the cast arc should appear while charge jewels step aside")
 assert(badge.original.alpha == 1 and badge.creature.alpha == 0,
     "the starting emblem should be visible before the creature appears")
 local function creatureStage()
@@ -198,10 +226,79 @@ advance(0)
 assert(badge.style == "skyriding" and not badge.scripts.OnUpdate,
     "successful cast must settle on the actual new style")
 assert(badge.icon.path:find("flight%-01%.png"), "Skyriding must use first art frame")
+assert(chargeTicker.shown and badge.castTicks[1].alpha == 0,
+    "Skyriding charges should return after the cast arc vanishes")
+
+chargeStart = now
+event("SPELL_UPDATE_CHARGES")
+advance(0.3)
+assert(#badge.chargeGems == 6 and #badge.castTicks == 12,
+    "the instrument needs six jewels and a restrained cast arc")
+assert(badge.chargeGems[4].core.g > badge.chargeGems[5].core.g
+    and badge.chargeGems[5].core.alpha > 0
+    and badge.chargeGems[6].core.alpha > 0,
+    "four ready charges should light four jewels and leave two dim")
+local initialRefill = badge.chargeGems[5].core.g
+advance(4.7)
+assert(badge.chargeGems[5].core.g > initialRefill,
+    "the next jewel should brighten smoothly as its charge recovers")
+chargeCount = 5
+chargeStart = now
+event("SPELL_UPDATE_CHARGES")
+advance(0.1)
+assert(badge.chargeGems[5].core.g > badge.chargeGems[6].core.g
+    and badge.chargeGems[5].glow.alpha > 0.2,
+    "a recovered charge should light and briefly glint")
+mounted, flying = true, false
+advance(0.1)
+local beforeTakeoff = badge.chargeGems[1].glow.alpha
+flying = true
+advance(0.1)
+assert(badge.chargeGems[1].glow.alpha > beforeTakeoff,
+    "takeoff should add one restrained pulse to the jewel ring")
+
+chargeSecret = true
+event("SPELL_UPDATE_CHARGES")
+assert(badge.chargeGems[1].core.alpha == 0,
+    "secret charge values must hide the jewels rather than guess")
+chargeSecret = false
+event("SPELL_UPDATE_CHARGES")
+assert(badge.chargeGems[1].core.alpha > 0,
+    "jewels should recover when safe data returns")
+primaryChargeAvailable = false
+event("SPELL_UPDATE_CHARGES")
+assert(badge.chargeGems[1].core.alpha > 0,
+    "Skyward Ascent should provide the shared pool when Surge Forward is unavailable")
+primaryChargeAvailable = true
+chargeAvailable = false
+event("SPELL_UPDATE_CHARGES")
+assert(badge.chargeGems[1].core.alpha == 0,
+    "missing spell data must hide the jewels rather than invent six charges")
+chargeAvailable = true
+event("SPELL_UPDATE_CHARGES")
+chargeStart = 0
+event("SPELL_UPDATE_CHARGES")
+advance(0.1)
+assert(badge.chargeGems[6].core.g < 0.3,
+    "an inactive charge cooldown must not fabricate a full refill")
+chargeStart = now
+event("SPELL_UPDATE_CHARGES")
+settings.flightIndicatorCharges = false
+addon.RefreshFlightIndicator()
+assert(not chargeTicker.shown and badge.chargeGems[1].core.alpha == 0,
+    "the charge-jewels option must actually disable them")
+settings.flightIndicatorCharges = true
+addon.RefreshFlightIndicator()
+advance(0.3)
+assert(chargeTicker.shown and badge.chargeGems[1].core.alpha > 0,
+    "the charge-jewels option must restore them")
 
 castDuration = 5
 event("UNIT_SPELLCAST_START", "player", "cast-forward", 436854)
 advance(2.5)
+assert(not chargeTicker.shown and badge.chargeGems[1].core.alpha == 0
+    and badge.castTicks[6].alpha > badge.castTicks[7].alpha,
+    "the cast arc should advance while charge jewels are hidden")
 assert(badge.icon.path:find("flight%-08%.png")
     and badge.blend.path:find("flight%-09%.png")
     and math.abs(badge.blend.alpha - 0.5) < 0.001
@@ -215,6 +312,8 @@ assert(badge.icon.path:find("flight%-13%.png")
 event("UNIT_SPELLCAST_INTERRUPTED", "player", "cast-forward", 436854)
 assert(badge.style == "skyriding" and badge.creature.alpha == 0,
     "cancelling the forward transition must restore its static dragon art")
+assert(chargeTicker.shown and badge.castTicks[1].alpha == 0,
+    "an interrupted cast must restore jewels and clear progress")
 
 secret = true
 aura = true
@@ -223,12 +322,19 @@ assert(badge.style == "skyriding", "secret aura state must not trigger a wrong-s
 secret = false
 event("UNIT_AURA", "player")
 assert(badge.style == "steady", "ordinary aura change must update the static indicator")
+assert(not chargeTicker.shown and badge.chargeGems[1].core.alpha == 0,
+    "switching to Steady Flight must hide the charge system")
 
+settings.flightIndicatorCastProgress = false
 event("UNIT_SPELLCAST_START", "player", "cast-three", 460002)
+advance(0.5)
+assert(badge.castTicks[1].alpha == 0,
+    "the cast-progress option must remove the progress arc")
 event("UNIT_SPELLCAST_STOP", "player", "cast-three", 460002)
 advance(0.1)
 assert(badge.style == "steady" and not badge.scripts.OnUpdate,
     "a cast stopped without success must restore the old badge")
+settings.flightIndicatorCastProgress = true
 
 event("UNIT_SPELLCAST_START", "player", "cast-four", 460003)
 event("PLAYER_ENTERING_WORLD")
@@ -237,6 +343,21 @@ assert(not badge.scripts.OnUpdate, "zoning must not strand an active animation")
 settings.flightIndicatorSize = "large"
 addon.RefreshFlightIndicator()
 assert(badge.width == 132 and badge.height == 132, "size setting must resize the badge")
+
+local function ornamentsFit(size)
+    settings.flightIndicatorSize = size
+    addon.RefreshFlightIndicator()
+    local half = badge.width / 2
+    for _, gem in ipairs(badge.chargeGems) do
+        local diamondHalf = gem.glow.width * math.sqrt(2) / 2
+        assert(math.abs(gem.glow.x) + diamondHalf <= half + 0.001
+            and math.abs(gem.glow.y) + diamondHalf <= half + 0.001,
+            "charge jewel glow must fit inside the " .. size .. " emblem")
+    end
+end
+ornamentsFit("small")
+ornamentsFit("medium")
+ornamentsFit("large")
 
 settings.flightIndicatorEnabled = false
 addon.RefreshFlightIndicator()
