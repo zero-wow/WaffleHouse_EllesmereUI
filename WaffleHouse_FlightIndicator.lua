@@ -177,16 +177,20 @@ local function PositionOrnaments()
         local width, height = badge:GetWidth(), badge:GetHeight()
         local left = -width / 2 + height * 1.16
         local step = (width - height * 1.16 - 15) / 5
-        -- Tiny jewels live below the lettering, still above the painted rim.
-        local y = -height * 0.19
+        -- Give the charges their own row below the capsule instead of
+        -- placing tiny blue/gold sparks over its painted sky and lettering.
+        local y = -height * 0.38
+        local socketSize = math.min(height * 0.15, step * 0.67)
         for index, gem in ipairs(badge.chargeGems) do
-            for _, part in ipairs({ gem.glow, gem.bezel, gem.core }) do
+            for _, part in ipairs({ gem.glow, gem.shadow, gem.bezel, gem.core }) do
                 part:ClearAllPoints()
                 part:SetPoint("CENTER", badge, "CENTER", left + (index - 1) * step, y)
             end
-            gem.glow:SetSize(height * 0.065, height * 0.065)
-            gem.bezel:SetSize(height * 0.055, height * 0.055)
-            gem.core:SetSize(height * 0.038, height * 0.038)
+            gem.glow:SetSize(socketSize * 1.25, socketSize * 1.25)
+            gem.shadow:SetSize(socketSize, socketSize)
+            gem.bezel:SetSize(socketSize * 0.82, socketSize * 0.82)
+            gem.core:SetSize(socketSize * 0.65, socketSize * 0.65)
+            gem.glow:SetVertexColor(1, 0.78, 0.36)
         end
         for index, tick in ipairs(badge.castTicks) do
             tick:ClearAllPoints()
@@ -200,13 +204,14 @@ local function PositionOrnaments()
     for index, gem in ipairs(badge.chargeGems) do
         local angle = math.rad(GEM_ANGLES[index])
         local x, y = size * 0.43 * math.cos(angle), size * 0.43 * math.sin(angle)
-        for _, part in ipairs({ gem.glow, gem.bezel, gem.core }) do
+        for _, part in ipairs({ gem.glow, gem.shadow, gem.bezel, gem.core }) do
             part:ClearAllPoints()
             part:SetPoint("CENTER", badge, "CENTER", x, y)
         end
         gem.glow:SetSize(size * 0.09, size * 0.09)
         gem.bezel:SetSize(size * 0.075, size * 0.075)
         gem.core:SetSize(size * 0.048, size * 0.048)
+        gem.glow:SetVertexColor(0.10, 0.85, 1)
     end
     for index, tick in ipairs(badge.castTicks) do
         local angle = math.rad(90 - (index - 1) * 360 / CAST_TICKS)
@@ -285,8 +290,9 @@ local function CreateBadge()
     badge.chargeGems = {}
     for index = 1, #GEM_ANGLES do
         local gem = {}
-        for _, part in ipairs({ "glow", "bezel", "core" }) do
-            local sublevel = part == "glow" and 2 or (part == "bezel" and 3 or 4)
+        for _, part in ipairs({ "glow", "shadow", "bezel", "core" }) do
+            local sublevel = part == "glow" and 2 or (part == "shadow" and 3
+                or (part == "bezel" and 4 or 5))
             local texture = badge:CreateTexture(nil, "OVERLAY", nil, sublevel)
             texture:SetTexture(WHITE)
             texture:SetRotation(math.pi / 4)
@@ -295,6 +301,7 @@ local function CreateBadge()
         end
         gem.glow:SetVertexColor(0.10, 0.85, 1)
         gem.glow:SetBlendMode("ADD")
+        gem.shadow:SetVertexColor(0.015, 0.025, 0.045)
         gem.bezel:SetVertexColor(0.82, 0.59, 0.28)
         badge.chargeGems[index] = gem
     end
@@ -362,6 +369,7 @@ end
 local function HideChargeGems()
     for _, gem in ipairs(badge.chargeGems) do
         gem.glow:SetAlpha(0)
+        gem.shadow:SetAlpha(0)
         gem.bezel:SetAlpha(0)
         gem.core:SetAlpha(0)
     end
@@ -399,19 +407,27 @@ local function RenderChargeGems()
             local fill = index <= state.count and 1
                 or (index == state.count + 1 and refill or 0)
             local flash = index == badge.chargePulseIndex and pulse or 0
-            gem.bezel:SetAlpha(0.88 * reveal)
+            gem.shadow:SetAlpha(badge.layout == "compact" and 0.96 * reveal or 0)
             if badge.layout == "compact" then
-                gem.core:SetVertexColor(0.42 + 0.58 * fill,
-                    0.29 + 0.57 * fill, 0.12 + 0.44 * fill)
+                -- Empty sockets read as cool steel; ready charges have a
+                -- bright ivory center and warm rim, not sky-colored glints.
+                gem.bezel:SetVertexColor(0.48 + 0.50 * fill,
+                    0.54 + 0.26 * fill, 0.62 - 0.34 * fill)
+                gem.core:SetVertexColor(0.12 + 0.88 * fill,
+                    0.17 + 0.77 * fill, 0.25 + 0.57 * fill)
             else
+                gem.bezel:SetVertexColor(0.82, 0.59, 0.28)
                 gem.core:SetVertexColor(0.08 + 0.20 * fill,
                     0.22 + 0.68 * fill, 0.31 + 0.69 * fill)
             end
-            gem.core:SetAlpha((0.64 + 0.36 * fill) * reveal)
+            gem.bezel:SetAlpha((badge.layout == "compact" and 1 or 0.88) * reveal)
+            gem.core:SetAlpha((badge.layout == "compact" and 1
+                or 0.64 + 0.36 * fill) * reveal)
             gem.glow:SetAlpha((0.12 * fill + 0.42 * flash
                 + 0.24 * takeoff) * reveal)
         else
             gem.glow:SetAlpha(0)
+            gem.shadow:SetAlpha(0)
             gem.bezel:SetAlpha(0)
             gem.core:SetAlpha(0)
         end

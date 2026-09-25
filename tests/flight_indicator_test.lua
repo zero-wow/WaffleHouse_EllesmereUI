@@ -254,7 +254,8 @@ assert(#badge.chargeGems == 6 and #badge.castTicks == 12,
     "the instrument needs six jewels and a restrained cast arc")
 assert(badge.chargeGems[4].core.g > badge.chargeGems[5].core.g
     and badge.chargeGems[5].core.alpha > 0
-    and badge.chargeGems[6].core.alpha > 0,
+    and badge.chargeGems[6].core.alpha > 0
+    and badge.chargeGems[1].shadow.alpha == 0,
     "four ready charges should light four jewels and leave two dim")
 local initialRefill = badge.chargeGems[5].core.g
 advance(4.7)
@@ -428,10 +429,14 @@ for size, dimensions in pairs({ small = { 114, 48 }, medium = { 132, 56 }, large
         assert(math.abs(gem.glow.x) + diamondHalf <= badge.width / 2 + 0.001
             and math.abs(gem.glow.y) + diamondHalf <= badge.height / 2 + 0.001,
             "compact charge jewels must fit inside the " .. size .. " housing")
-        assert(badge.height / 2 - gem.glow.y + diamondHalf <= badge.height * 0.75,
-            "compact charge jewels need clear space above the lower gold rim")
-        assert(gem.glow.y <= -badge.height * 0.18,
-            "compact jewels must sit below the lettering, not across it")
+        assert(gem.shadow.y + gem.shadow.width * math.sqrt(2) / 2
+            <= -badge.height * 0.27,
+            "compact jewels need a separate row below the capsule lettering")
+        assert(gem.shadow.width >= badge.height * 0.11
+            and gem.core.width >= badge.height * 0.07
+            and gem.shadow.width > gem.bezel.width
+            and gem.bezel.width > gem.core.width,
+            "compact jewels need readable sockets and cores at " .. size)
     end
 end
 settings.flightIndicatorSize = "medium"
@@ -479,6 +484,11 @@ advance(0.3)
 assert(badge.icon.path:find("flight%-01%.png")
     and badge.chargeGems[1].core.alpha > 0,
     "rounded compact Skyriding must retain the dragon art and charge jewels")
+assert(badge.chargeGems[1].shadow.alpha > 0
+    and badge.chargeGems[6].shadow.alpha > 0
+    and badge.chargeGems[1].core.r > badge.chargeGems[6].core.r + 0.5
+    and badge.chargeGems[1].bezel.r > badge.chargeGems[6].bezel.r + 0.4,
+    "ready and empty compact charges must differ clearly in brightness and rim color")
 assert(badge.housing.path:find("compact%-skyride%.png"),
     "the illustrated panel must track the actual Skyriding state")
 settings.flightIndicatorCompactTheme = "alternate"
