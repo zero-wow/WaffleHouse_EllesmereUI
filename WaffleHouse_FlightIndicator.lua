@@ -3,11 +3,9 @@ local addonName, addon = ...
 local STEADY_FLIGHT_AURA = 404468
 local ART_ROOT = "Interface\\AddOns\\" .. addonName .. "\\Media\\FlightStyle\\"
 local ICONS = { skyriding = ART_ROOT .. "flight-01.png", steady = ART_ROOT .. "flight-16.png" }
-local BACKGROUNDS = {
-    skyriding = { ART_ROOT .. "empty-skyriding.png", ART_ROOT .. "swirl-skyriding.png",
-        ART_ROOT .. "swirl-steady.png", ART_ROOT .. "empty-steady.png" },
-    steady = { ART_ROOT .. "empty-steady.png", ART_ROOT .. "swirl-steady.png",
-        ART_ROOT .. "swirl-skyriding.png", ART_ROOT .. "empty-skyriding.png" },
+local EMPTY_BACKGROUNDS = {
+    skyriding = ART_ROOT .. "empty-skyriding.png",
+    steady = ART_ROOT .. "empty-steady.png",
 }
 local BASE_CREATURE = {}
 for index = 1, 6 do
@@ -43,9 +41,6 @@ for index, name in ipairs(BASE_CREATURE) do
         CREATURE[#CREATURE + 1] = ART_ROOT .. inbetween
     end
 end
-local RIM_TEXTURE = ART_ROOT .. "rim.png"
-local WIND_TEXTURE = ART_ROOT .. "wind.png"
-local VEIL_TEXTURE = ART_ROOT .. "veil.png"
 local SWITCH_SPELLS = { [436854] = true, [460002] = true, [460003] = true }
 local SIZES = { small = 76, medium = 104, large = 132 }
 local DEFAULT_X, DEFAULT_Y = 0, 180
@@ -60,6 +55,25 @@ end
 local function SmoothStep(value)
     value = Clamp01(value)
     return value * value * (3 - 2 * value)
+end
+
+-- Read the same start/end timestamps used by Blizzard's cast bar. Only trust
+-- them when the live cast is one of our flight-style spells and its cast GUID
+-- matches the event that started this animation.
+local function ReadStyleCastTimes(castGUID)
+    if type(UnitCastingInfo) ~= "function" then return end
+    local ok, castStart, castEnd = pcall(function()
+        local _, _, _, startMS, endMS, _, currentGUID, _, spellID = UnitCastingInfo("player")
+        if issecretvalue and (issecretvalue(startMS) or issecretvalue(endMS)
+            or issecretvalue(currentGUID) or issecretvalue(spellID)) then return end
+        if type(startMS) ~= "number" or type(endMS) ~= "number"
+            or type(spellID) ~= "number" or not SWITCH_SPELLS[spellID]
+            or (castGUID and currentGUID and castGUID ~= currentGUID) then return end
+        local duration = (endMS - startMS) / 1000
+        if duration < 1 or duration > 20 then return end
+        return startMS / 1000, endMS / 1000
+    end)
+    if ok and castStart and castEnd then return castStart, castEnd end
 end
 
 -- LiteMount uses this same Steady Flight aura to distinguish the two styles.
@@ -108,28 +122,9 @@ local function CreateBadge()
     badge.blend:SetAllPoints()
     badge.blend:SetAlpha(0)
 
-    badge.wind = badge:CreateTexture(nil, "OVERLAY")
-    badge.wind:SetPoint("CENTER", badge, "CENTER")
-    badge.wind:SetTexture(WIND_TEXTURE)
-    badge.wind:SetBlendMode("ADD")
-    badge.wind:SetAlpha(0)
-
-    badge.veil = badge:CreateTexture(nil, "OVERLAY")
-    badge.veil:SetPoint("CENTER", badge, "CENTER")
-    badge.veil:SetTexture(VEIL_TEXTURE)
-    badge.veil:SetAlpha(0)
-
-    badge.creatureA = badge:CreateTexture(nil, "OVERLAY")
-    badge.creatureA:SetPoint("CENTER", badge, "CENTER")
-    badge.creatureA:SetAlpha(0)
-    badge.creatureB = badge:CreateTexture(nil, "OVERLAY")
-    badge.creatureB:SetPoint("CENTER", badge, "CENTER")
-    badge.creatureB:SetAlpha(0)
-
-    badge.rim = badge:CreateTexture(nil, "OVERLAY")
-    badge.rim:SetAllPoints()
-    badge.rim:SetTexture(RIM_TEXTURE)
-    badge.rim:SetAlpha(0)
+    badge.creature = badge:CreateTexture(nil, "OVERLAY")
+    badge.creature:SetPoint("CENTER", badge, "CENTER")
+    badge.creature:SetAlpha(0)
     badge.original = badge:CreateTexture(nil, "OVERLAY")
     badge.original:SetAllPoints()
     badge.original:SetAlpha(0)
@@ -169,11 +164,7 @@ local function ShowStaticStyle(style)
     badge.icon:SetTexture(ICONS[style])
     badge.iconPath = ICONS[style]
     badge.blend:SetAlpha(0)
-    badge.wind:SetAlpha(0)
-    badge.veil:SetAlpha(0)
-    badge.creatureA:SetAlpha(0)
-    badge.creatureB:SetAlpha(0)
-    badge.rim:SetAlpha(0)
+    badge.creature:SetAlpha(0)
     badge.original:SetAlpha(0)
     badge.style = style
     badge:Show()
@@ -194,74 +185,45 @@ end
 
 local function RenderTransition()
     if not (badge and animation) then return end
+    local castStart, castEnd = ReadStyleCastTimes(animation.guid)
+    if castStart and math.abs(castStart - animation.startTime) < 10 then
+        animation.startTime = castStart
+        animation.duration = castEnd - castStart
+    end
     local progress = Clamp01(
         (GetTime() - animation.startTime) / animation.duration)
-    local backgrounds = BACKGROUNDS[animation.from]
-    local backgroundPosition
-    if progress < 0.18 then
-        backgroundPosition = progress / 0.18
-    elseif progress < 0.50 then
-        backgroundPosition = 1
-    elseif progress < 0.72 then
-        backgroundPosition = 1 + (progress - 0.50) / 0.22
-    elseif progress < 0.84 then
-        backgroundPosition = 2
-    else
-        backgroundPosition = 2 + (progress - 0.84) / 0.16
+    -- Keep the ring and sky calm. The only motion is the creature's authored
+    -- sequence, paced against the full live spell cast instead of a final burst.
+    local fromBackground = EMPTY_BACKGROUNDS[animation.from]
+    local toBackground = EMPTY_BACKGROUNDS[animation.to]
+    if badge.iconPath ~= fromBackground then
+        badge.icon:SetTexture(fromBackground)
+        badge.iconPath = fromBackground
     end
-    local backgroundIndex = math.min(3, math.floor(backgroundPosition) + 1)
-    local backgroundMix = backgroundPosition - (backgroundIndex - 1)
-    if badge.iconPath ~= backgrounds[backgroundIndex] then
-        badge.icon:SetTexture(backgrounds[backgroundIndex])
-        badge.iconPath = backgrounds[backgroundIndex]
+    if badge.blendPath ~= toBackground then
+        badge.blend:SetTexture(toBackground)
+        badge.blendPath = toBackground
     end
-    if badge.blendPath ~= backgrounds[backgroundIndex + 1] then
-        badge.blend:SetTexture(backgrounds[backgroundIndex + 1])
-        badge.blendPath = backgrounds[backgroundIndex + 1]
-    end
-    badge.blend:SetAlpha(backgroundMix)
+    badge.blend:SetAlpha(SmoothStep((progress - 0.12) / 0.76))
 
-    local direction = animation.from == "skyriding" and 1 or -1
-    local energy = SmoothStep((progress - 0.08) / 0.18)
-        * SmoothStep((0.98 - progress) / 0.17)
-    badge.wind:SetRotation(direction * 3 * math.pi * progress)
-    badge.wind:SetAlpha(energy * (0.37 + 0.09 * math.sin(18 * math.pi * progress)))
-    badge.veil:SetRotation(-direction * 2 * math.pi * progress)
-    badge.veil:SetAlpha(energy * (0.19 + 0.08 * math.sin(27 * math.pi * progress) ^ 2))
-
-    -- The subject is separate from the gem: it flies out, leaves the center
-    -- empty during the clockwork vortex, then returns as a 48-pose morph.
-    local creaturePosition, creatureAlpha, creatureScale, offsetX, offsetY
-    if progress < 0.20 then
-        local leaving = SmoothStep(progress / 0.20)
-        creaturePosition = animation.from == "skyriding" and (1 + 4 * leaving)
-            or (#CREATURE - 4 * leaving)
-        creatureAlpha = 1 - SmoothStep((progress - 0.13) / 0.07)
-        creatureScale = 1 - 0.52 * leaving
-        offsetX = (animation.from == "skyriding" and 0.68 or 0.05) * leaving
-        offsetY = (animation.from == "skyriding" and -0.36 or 0.55) * leaving
-    elseif progress >= 0.66 then
-        -- A linear walk gives all 48 poses roughly equal screen time during
-        -- the final 1.7 seconds; only the flight path and scale ease in.
-        local arriving = Clamp01((progress - 0.66) / 0.34)
-        local arrivalEase = SmoothStep(arriving)
-        creaturePosition = animation.from == "skyriding"
-            and (5 + (#CREATURE - 5) * arriving)
-            or (#CREATURE - 4 - (#CREATURE - 5) * arriving)
-        creatureAlpha = SmoothStep((progress - 0.66) / 0.08)
-        creatureScale = 0.32 + 0.68 * arrivalEase
-        offsetX = (animation.from == "steady" and -0.24 or 0) * (1 - arrivalEase)
-        offsetY = (animation.from == "steady" and 0.22 or -0.12) * (1 - arrivalEase)
-    else
-        creatureAlpha = 0
+    local position = 1 + (#CREATURE - 1) * (animation.from == "skyriding"
+        and progress or (1 - progress))
+    local index = math.max(1, math.min(#CREATURE, math.floor(position + 0.5)))
+    if badge.creaturePath ~= CREATURE[index] then
+        badge.creature:SetTexture(CREATURE[index])
+        badge.creaturePath = CREATURE[index]
     end
+    -- The original endpoint paintings use a smaller bird than dragon. Match
+    -- those silhouettes so the final handoff does not visibly pop in size.
+    local morphProgress = (position - 1) / (#CREATURE - 1)
+    local creatureSize = badge:GetWidth() * (0.90 - 0.12 * morphProgress)
+    badge.creature:SetSize(creatureSize, creatureSize)
 
     local originalAlpha = 0
     if progress < 0.06 then
         originalAlpha = 1 - SmoothStep(progress / 0.06)
     elseif progress > 0.92 then
         originalAlpha = SmoothStep((progress - 0.92) / 0.08)
-        creatureAlpha = creatureAlpha * (1 - originalAlpha)
     end
     local originalPath = progress < 0.5 and ICONS[animation.from] or ICONS[animation.to]
     if badge.originalPath ~= originalPath then
@@ -269,33 +231,7 @@ local function RenderTransition()
         badge.originalPath = originalPath
     end
     badge.original:SetAlpha(originalAlpha)
-    badge.rim:SetAlpha(1 - originalAlpha)
-
-    if creatureAlpha > 0 then
-        local first = math.min(#CREATURE - 1, math.floor(creaturePosition))
-        local mix = creaturePosition - first
-        if badge.creatureAPath ~= CREATURE[first] then
-            badge.creatureA:SetTexture(CREATURE[first])
-            badge.creatureAPath = CREATURE[first]
-        end
-        if badge.creatureBPath ~= CREATURE[first + 1] then
-            badge.creatureB:SetTexture(CREATURE[first + 1])
-            badge.creatureBPath = CREATURE[first + 1]
-        end
-        local size = badge:GetWidth()
-            * (0.90 - 0.12 * (creaturePosition - 1) / (#CREATURE - 1)) * creatureScale
-        for _, texture in ipairs({ badge.creatureA, badge.creatureB }) do
-            texture:SetSize(size, size)
-            texture:ClearAllPoints()
-            texture:SetPoint("CENTER", badge, "CENTER", offsetX * badge:GetWidth(),
-                offsetY * badge:GetHeight())
-        end
-        badge.creatureA:SetAlpha(creatureAlpha * (1 - mix))
-        badge.creatureB:SetAlpha(creatureAlpha * mix)
-    else
-        badge.creatureA:SetAlpha(0)
-        badge.creatureB:SetAlpha(0)
-    end
+    badge.creature:SetAlpha(1 - originalAlpha)
 end
 
 local function StartStyleCast(castGUID)
@@ -305,17 +241,9 @@ local function StartStyleCast(castGUID)
     if not (badge and badge.style) then return end
     local from = badge.style
     local duration, startTime = 5, GetTime()
-    if type(UnitCastingInfo) == "function" then
-        local ok, castStart, castEnd = pcall(function()
-            local _, _, _, startMS, endMS = UnitCastingInfo("player")
-            if type(startMS) ~= "number" or type(endMS) ~= "number"
-                or (issecretvalue and (issecretvalue(startMS) or issecretvalue(endMS))) then return end
-            return startMS / 1000, endMS / 1000
-        end)
-        if ok and castStart and castEnd and castEnd > castStart
-            and math.abs(castStart - startTime) < 10 then
-            startTime, duration = castStart, castEnd - castStart
-        end
+    local castStart, castEnd = ReadStyleCastTimes(castGUID)
+    if castStart and math.abs(castStart - startTime) < 10 then
+        startTime, duration = castStart, castEnd - castStart
     end
     animation = {
         from = from,
@@ -372,8 +300,7 @@ function addon.RefreshFlightIndicator()
     if not badge then CreateBadge() end
     local size = SIZES[settings.flightIndicatorSize] or SIZES.medium
     badge:SetSize(size, size)
-    badge.wind:SetSize(size * 0.77, size * 0.77)
-    badge.veil:SetSize(size * 0.72, size * 0.72)
+    badge.creature:SetSize(size * 0.90, size * 0.90)
     PositionBadge(settings)
     badge:EnableMouse(IsShiftKeyDown())
 

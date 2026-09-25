@@ -63,8 +63,7 @@ for ($gap = 1; $gap -le 19; $gap++) {
         }
     }
 }
-foreach ($name in @('wind.png', 'veil.png', 'rim.png', 'empty-skyriding.png',
-        'empty-steady.png', 'swirl-skyriding.png', 'swirl-steady.png')) {
+foreach ($name in @('empty-skyriding.png', 'empty-steady.png')) {
     Copy-Item -LiteralPath (Join-Path $sourceArt $name) -Destination (Join-Path $installedArt $name) -Force
     if ((Get-FileHash -LiteralPath (Join-Path $sourceArt $name) -Algorithm SHA256).Hash -ne
         (Get-FileHash -LiteralPath (Join-Path $installedArt $name) -Algorithm SHA256).Hash) {
