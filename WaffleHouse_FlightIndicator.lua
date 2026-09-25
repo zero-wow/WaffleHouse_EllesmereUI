@@ -397,7 +397,11 @@ local function UpdateState()
     local style = ReadFlightStyle()
     if not style then return end
     if animation then
-        if style == animation.to and animation.completed then
+        -- A success/aura event can arrive before the visual cast clock ends.
+        -- Keep the dragon-to-bird morph running for the whole measured cast.
+        if style == animation.to and animation.completed
+            and (animation.from ~= "skyriding"
+                or GetTime() >= animation.startTime + animation.duration) then
             ShowStaticStyle(style)
         end
         return
@@ -416,11 +420,14 @@ local function RenderTransition()
         (GetTime() - animation.startTime) / animation.duration)
     RenderCastProgress(progress)
 
-    -- The original authored emblems read cleanly from dragon to bird. Do not
-    -- use the reverse-direction cutout morph here: its intermediate images
-    -- show two heads when played in this direction.
+    -- Keep the authored full emblems in this direction. Do not use the
+    -- reverse-direction cutout morph here: its intermediate images
+    -- show two heads when played in this direction. The bird is mostly formed
+    -- by frame 11, so pace this direction later into the actual cast rather
+    -- than leaving a static-looking bird for the final two seconds. Blend
+    -- only near each frame boundary to avoid prolonged double silhouettes.
     if animation.from == "skyriding" then
-        local framePosition = 1 + (#FLIGHT_FRAMES - 1) * progress
+        local framePosition = 1 + (#FLIGHT_FRAMES - 1) * progress ^ 1.85
         local first = math.min(#FLIGHT_FRAMES - 1, math.floor(framePosition))
         if badge.iconPath ~= FLIGHT_FRAMES[first] then
             badge.icon:SetTexture(FLIGHT_FRAMES[first])
@@ -430,9 +437,10 @@ local function RenderTransition()
             badge.blend:SetTexture(FLIGHT_FRAMES[first + 1])
             badge.blendPath = FLIGHT_FRAMES[first + 1]
         end
-        badge.blend:SetAlpha(framePosition - first)
+        badge.blend:SetAlpha(SmoothStep((framePosition - first - 0.2) / 0.6))
         badge.creature:SetAlpha(0)
         badge.original:SetAlpha(0)
+        if progress >= 1 and animation.completed then UpdateState() end
         return
     end
 
@@ -525,7 +533,9 @@ local function FinishStyleCast(castGUID)
     UpdateState()
     -- The success event can precede the Steady Flight aura update.
     C_Timer.After(0.25, UpdateState)
-    C_Timer.After(1, function()
+    local remaining = animation
+        and math.max(0, animation.startTime + animation.duration - GetTime()) or 0
+    C_Timer.After(math.max(1, remaining + 0.25), function()
         if animation and animation.guid == castGUID and animation.completed then
             ShowStaticStyle(ReadFlightStyle() or animation.from)
         end

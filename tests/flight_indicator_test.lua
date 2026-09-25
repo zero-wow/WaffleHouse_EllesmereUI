@@ -299,21 +299,38 @@ advance(2.5)
 assert(not chargeTicker.shown and badge.chargeGems[1].core.alpha == 0
     and badge.castTicks[6].alpha > badge.castTicks[7].alpha,
     "the cast arc should advance while charge jewels are hidden")
-assert(badge.icon.path:find("flight%-08%.png")
-    and badge.blend.path:find("flight%-09%.png")
-    and math.abs(badge.blend.alpha - 0.5) < 0.001
+assert(badge.icon.path:find("flight%-05%.png")
+    and badge.blend.path:find("flight%-06%.png")
+    and badge.blend.alpha == 0
     and badge.creature.alpha == 0,
-    "the dragon-to-bird cast should crossfade authored full emblems")
+    "the dragon should remain legible halfway through the live cast")
 advance(1.5)
-assert(badge.icon.path:find("flight%-13%.png")
-    and badge.blend.path:find("flight%-14%.png")
-    and badge.blend.alpha == 0,
-    "the forward sequence must continue evenly across the live cast")
+assert(badge.icon.path:find("flight%-10%.png")
+    and badge.blend.path:find("flight%-11%.png")
+    and badge.blend.alpha == 1,
+    "the dragon-to-bird morph should still be advancing near the cast end")
 event("UNIT_SPELLCAST_INTERRUPTED", "player", "cast-forward", 436854)
 assert(badge.style == "skyriding" and badge.creature.alpha == 0,
     "cancelling the forward transition must restore its static dragon art")
 assert(chargeTicker.shown and badge.castTicks[1].alpha == 0,
     "an interrupted cast must restore jewels and clear progress")
+
+event("UNIT_SPELLCAST_START", "player", "cast-early", 436854)
+advance(4)
+aura = true
+event("UNIT_SPELLCAST_SUCCEEDED", "player", "cast-early", 436854)
+assert(badge.scripts.OnUpdate and badge.style == "skyriding",
+    "an early success event must not cut the forward morph short")
+advance(0.9)
+assert(badge.scripts.OnUpdate and badge.blend.alpha > 0,
+    "the bird transition should continue until the measured cast ends")
+advance(0.1)
+assert(badge.style == "steady" and not badge.scripts.OnUpdate
+    and badge.icon.path:find("flight%-16%.png"),
+    "the forward cast must settle on the exact steady art at its end")
+aura = nil
+event("UNIT_AURA", "player")
+assert(badge.style == "skyriding", "the next aura change should still update the badge")
 
 secret = true
 aura = true
