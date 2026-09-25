@@ -419,6 +419,8 @@ for size, dimensions in pairs({ small = { 132, 48 }, medium = { 158, 56 }, large
         assert(math.abs(gem.glow.x) + diamondHalf <= badge.width / 2 + 0.001
             and math.abs(gem.glow.y) + diamondHalf <= badge.height / 2 + 0.001,
             "compact charge jewels must fit inside the " .. size .. " housing")
+        assert(badge.height / 2 - gem.glow.y + diamondHalf <= badge.height * 0.75,
+            "compact charge jewels need clear space above the lower gold rim")
     end
 end
 settings.flightIndicatorSize = "medium"

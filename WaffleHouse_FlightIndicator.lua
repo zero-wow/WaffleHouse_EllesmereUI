@@ -168,7 +168,7 @@ local function PositionOrnaments()
         local width, height = badge:GetWidth(), badge:GetHeight()
         local left = -width / 2 + height * 1.16
         local step = (width - height * 1.16 - 15) / 5
-        local y = -height * 0.17
+        local y = -height * 0.11
         for index, gem in ipairs(badge.chargeGems) do
             for _, part in ipairs({ gem.glow, gem.bezel, gem.core }) do
                 part:ClearAllPoints()
