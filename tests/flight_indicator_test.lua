@@ -3,7 +3,7 @@ local settings = { flightIndicatorEnabled = true, flightIndicatorSize = "medium"
     flightIndicatorCharges = true, flightIndicatorCastProgress = true,
     flightIndicatorCompactTheme = "classic" }
 local addon = { GetSettings = function() return settings end }
-local aura, secret, shift, now = true, false, false, 0
+local aura, secret, shift, control, now = true, false, false, false, 0
 local chargeCount, chargeMaximum, chargeStart, chargeDuration = 4, 6, 0, 10
 local chargeAvailable, primaryChargeAvailable, chargeSecret = true, true, false
 local mounted, flying = false, false
@@ -13,6 +13,7 @@ local timers = {}
 
 GetTime = function() return now end
 IsShiftKeyDown = function() return shift end
+IsControlKeyDown = function() return control end
 issecretvalue = function(value) return type(value) == "table" and value.secret == true end
 C_Secrets = { ShouldAurasBeSecret = function() return secret end }
 C_UnitAuras = { GetPlayerAuraBySpellID = function(spellID)
@@ -53,6 +54,7 @@ local function NewFrame(name)
     function f:SetMovable() end
     function f:SetClampedToScreen() end
     function f:EnableMouse(value) self.mouse = value end
+    function f:EnableMouseWheel(value) self.mouseWheel = value end
     function f:SetAllPoints() end
     function f:ClearAllPoints() end
     function f:SetPoint(_, _, _, x, y) self.x, self.y = x, y end
@@ -171,6 +173,7 @@ assert(badge.icon.layer == "ARTWORK" and badge.blend.layer == "ARTWORK"
     "the transparent creature must draw above every sky and opaque emblem")
 assert(badge.icon.path:find("flight%-16%.png"), "steady badge should use last art frame")
 assert(badge.mouse == false, "badge must not block ordinary HUD clicks")
+assert(badge.mouseWheel == false, "ordinary scrolling must pass through the badge")
 assert(chargeTicker and not chargeTicker.shown,
     "charge jewels must stay hidden in Steady Flight")
 for _, gem in ipairs(badge.chargeGems) do
@@ -181,6 +184,7 @@ end
 shift = true
 event("MODIFIER_STATE_CHANGED")
 assert(badge.mouse == true, "holding Shift must enable badge dragging")
+assert(badge.mouseWheel == false, "Shift-drag must not capture the mouse wheel")
 badge.scripts.OnDragStart(badge)
 assert(badge.moving, "Shift-drag must start moving")
 badge.x, badge.y = 110, -80
@@ -190,6 +194,30 @@ assert(settings.flightIndicatorX == 110 and settings.flightIndicatorY == -80,
 shift = false
 event("MODIFIER_STATE_CHANGED")
 assert(badge.mouse == false, "releasing Shift must stop intercepting clicks")
+badge.scripts.OnMouseWheel(badge, 1)
+assert(settings.flightIndicatorSize == "medium", "ordinary scrolling must not resize the badge")
+control = true
+event("MODIFIER_STATE_CHANGED")
+assert(badge.mouse == true, "holding Ctrl must enable wheel resizing")
+assert(badge.mouseWheel == true, "holding Ctrl must enable the mouse wheel")
+badge.scripts.OnMouseWheel(badge, 1)
+assert(settings.flightIndicatorSize == "large" and badge.width == 132,
+    "Ctrl+wheel up must enlarge and save the full emblem size")
+badge.scripts.OnMouseWheel(badge, 1)
+assert(settings.flightIndicatorSize == "large", "wheel size must stop at Large")
+badge.scripts.OnMouseWheel(badge, -1)
+badge.scripts.OnMouseWheel(badge, -1)
+badge.scripts.OnMouseWheel(badge, -1)
+assert(settings.flightIndicatorSize == "small" and badge.width == 76,
+    "Ctrl+wheel down must shrink and stop at Small")
+badge.scripts.OnMouseWheel(badge, 1)
+addon.RefreshFlightIndicator()
+assert(settings.flightIndicatorSize == "medium" and badge.width == 104,
+    "wheel-selected size must survive a refresh")
+control = false
+event("MODIFIER_STATE_CHANGED")
+assert(badge.mouse == false, "releasing Ctrl must restore click-through behavior")
+assert(badge.mouseWheel == false, "releasing Ctrl must restore wheel pass-through")
 
 event("UNIT_SPELLCAST_START", "player", "cast-one", 460003)
 assert(badge.scripts.OnUpdate, "Switch Flight Style cast must begin the animation")
@@ -401,6 +429,14 @@ addon.RefreshFlightIndicator()
 assert(badge.width == 132 and badge.height == 56
     and badge.x == -716 and badge.y == 338,
     "rounded compact view should sit beside the default radar launcher")
+control = true
+event("MODIFIER_STATE_CHANGED")
+badge.scripts.OnMouseWheel(badge, -1)
+assert(settings.flightIndicatorSize == "small" and badge.width == 114 and badge.height == 48,
+    "Ctrl+wheel must also resize the rounded compact layout")
+badge.scripts.OnMouseWheel(badge, 1)
+control = false
+event("MODIFIER_STATE_CHANGED")
 assert(badge.housing.path:find("compact%-steady%.png")
     and badge.housing.alpha == 1 and badge.icon.path:find("flight%-16%.png")
     and not badge.label,

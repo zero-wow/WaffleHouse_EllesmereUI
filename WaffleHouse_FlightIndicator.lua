@@ -50,6 +50,7 @@ local SWITCH_SPELLS = { [436854] = true, [460002] = true, [460003] = true }
 -- Try both because one may not be available until the player mounts.
 local CHARGE_SPELLS = { 372608, 372610 }
 local SIZES = { small = 76, medium = 104, large = 132 }
+local SIZE_ORDER = { "small", "medium", "large" }
 -- Two matching, short painted panels keep the lettering part of the artwork.
 -- The medallion rises past the capsule edge and retains the live creature art.
 local COMPACT_SIZES = {
@@ -361,9 +362,29 @@ local function CreateBadge()
         settings[key .. "Y"] = math.floor(y - parentY + 0.5)
         PositionBadge(settings)
     end)
+    badge:SetScript("OnMouseWheel", function(_, direction)
+        if not IsControlKeyDown() or direction == 0 then return end
+        local settings = addon.GetSettings()
+        local current = settings.flightIndicatorSize
+        for index, size in ipairs(SIZE_ORDER) do
+            if current == size then
+                local nextIndex = math.max(1, math.min(#SIZE_ORDER, index + (direction > 0 and 1 or -1)))
+                if nextIndex ~= index then
+                    settings.flightIndicatorSize = SIZE_ORDER[nextIndex]
+                    addon.RefreshFlightIndicator()
+                end
+                return
+            end
+        end
+        settings.flightIndicatorSize = "medium"
+        addon.RefreshFlightIndicator()
+    end)
     badge:SetScript("OnHide", function(self)
         self:StopMovingOrSizing()
     end)
+    -- SetScript("OnMouseWheel") enables wheel handling implicitly on Retail.
+    -- Keep it off until Ctrl is held so ordinary scrolling passes through.
+    badge:EnableMouseWheel(IsControlKeyDown())
 end
 
 local function HideChargeGems()
@@ -705,7 +726,8 @@ function addon.RefreshFlightIndicator()
     PositionArtwork()
     PositionOrnaments()
     PositionBadge(settings)
-    badge:EnableMouse(IsShiftKeyDown())
+    badge:EnableMouse(IsShiftKeyDown() or IsControlKeyDown())
+    badge:EnableMouseWheel(IsControlKeyDown())
 
     if animation then RenderTransition() else UpdateState() end
     if badge.style then
@@ -759,7 +781,10 @@ events:SetScript("OnEvent", function(_, event, unit, castGUID, spellID)
         return
     end
     if event == "MODIFIER_STATE_CHANGED" then
-        if badge and badge:IsShown() then badge:EnableMouse(IsShiftKeyDown()) end
+        if badge and badge:IsShown() then
+            badge:EnableMouse(IsShiftKeyDown() or IsControlKeyDown())
+            badge:EnableMouseWheel(IsControlKeyDown())
+        end
         return
     end
     if event == "PLAYER_ENTERING_WORLD" and animation then

@@ -496,7 +496,7 @@ function addon.BuildAdventurePage(parent, yOffset)
         {
             type = "toggle",
             text = "Show Flight Style Indicator",
-            tooltip = "Show the illustrated Skyriding or Steady Flight emblem. Choose its original size or a much smaller version with the same art and animation. Hold Shift and drag either layout to move it. An interrupted Switch Flight Style cast restores the original state. Off by default on public installs.",
+            tooltip = "Show the illustrated Skyriding or Steady Flight emblem. Choose its original size or a much smaller version with the same art and animation. Hold Shift and drag either layout to move it; hold Ctrl and scroll over it to change size. An interrupted Switch Flight Style cast restores the original state. Off by default on public installs.",
             getValue = function()
                 return GetSettings().flightIndicatorEnabled == true
             end,
@@ -527,7 +527,7 @@ function addon.BuildAdventurePage(parent, yOffset)
             text = "Indicator Size",
             values = { small = "Small", medium = "Medium", large = "Large" },
             order = { "small", "medium", "large" },
-            tooltip = "Size of the selected flight-indicator layout.",
+            tooltip = "Size of the flight indicator in either layout. You can also hold Ctrl and scroll over the indicator to step between Small, Medium, and Large.",
             getValue = function()
                 return GetSettings().flightIndicatorSize
             end,
