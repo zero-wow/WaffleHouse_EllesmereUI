@@ -1,6 +1,7 @@
 local source = arg[1] or "WaffleHouse_FlightIndicator.lua"
 local settings = { flightIndicatorEnabled = true, flightIndicatorSize = "medium",
-    flightIndicatorCharges = true, flightIndicatorCastProgress = true }
+    flightIndicatorCharges = true, flightIndicatorCastProgress = true,
+    flightIndicatorCompactTheme = "classic" }
 local addon = { GetSettings = function() return settings end }
 local aura, secret, shift, now = true, false, false, 0
 local chargeCount, chargeMaximum, chargeStart, chargeDuration = 4, 6, 0, 10
@@ -147,7 +148,9 @@ for gap = 1, 19 do
         file:close()
     end
 end
-for _, name in ipairs({ "empty-skyriding.png", "empty-steady.png", "compact-housing.png" }) do
+for _, name in ipairs({ "empty-skyriding.png", "empty-steady.png",
+    "compact-steady.png", "compact-skyride.png",
+    "compact-alternate-steady.png", "compact-alternate-skyride.png" }) do
     local path = "Media/FlightStyle/" .. name
     local file = assert(io.open(path, "rb"), "missing animation effect " .. path)
     file:close()
@@ -157,6 +160,7 @@ event("PLAYER_LOGIN")
 assert(badge and badge.shown and badge.style == "steady", "steady aura should show the steady badge")
 assert(#badge.preloadedArt == 48, "all 48 creature stages should be loaded before the first cast")
 assert(#badge.preloadedFrames == 16, "the original emblem sequence must be ready before the cast")
+assert(#badge.preloadedPanels == 4, "both compact panel themes must be ready before the first cast")
 assert(not badge.wind and not badge.veil and not badge.rim,
     "the rejected swirling overlays must not appear in the flight indicator")
 assert(badge.icon.layer == "ARTWORK" and badge.blend.layer == "ARTWORK"
@@ -393,26 +397,32 @@ ornamentsFit("large")
 settings.flightIndicatorLayout = "compact"
 settings.flightIndicatorSize = "medium"
 addon.RefreshFlightIndicator()
-assert(badge.width == 158 and badge.height == 56
-    and badge.x == -703 and badge.y == 338,
+assert(badge.width == 132 and badge.height == 56
+    and badge.x == -716 and badge.y == 338,
     "rounded compact view should sit beside the default radar launcher")
-assert(badge.housing.path:find("compact%-housing%.png")
+assert(badge.housing.path:find("compact%-steady%.png")
     and badge.housing.alpha == 1 and badge.icon.path:find("flight%-16%.png")
-    and badge.label.shown and badge.label.text == "STEADY"
-    and badge.label.justify == "CENTER" and badge.label.y == -56 * 0.40,
-    "compact view must have a separate rounded housing, live art, and state text")
+    and not badge.label,
+    "compact view must use illustrated state lettering without a floating font string")
+settings.flightIndicatorCompactTheme = "alternate"
+addon.RefreshFlightIndicator()
+assert(badge.housing.path:find("compact%-alternate%-steady%.png")
+    and badge.x == -716,
+    "changing compact theme must swap the panel without moving the layout")
+settings.flightIndicatorCompactTheme = "classic"
+addon.RefreshFlightIndicator()
+assert(badge.housing.path:find("compact%-steady%.png"),
+    "the original illustrated wording must remain selectable")
 assert(badge.icon.x < 0 and badge.icon.width < badge.height
     and badge.housing.sublevel > badge.icon.sublevel,
     "the creature medallion must project from the left side of the capsule")
-for size, dimensions in pairs({ small = { 132, 48 }, medium = { 158, 56 }, large = { 184, 66 } }) do
+for size, dimensions in pairs({ small = { 114, 48 }, medium = { 132, 56 }, large = { 156, 66 } }) do
     settings.flightIndicatorSize = size
     addon.RefreshFlightIndicator()
     assert(badge.width == dimensions[1] and badge.height == dimensions[2],
         "rounded compact size must scale the authored housing at " .. size)
-    assert(badge.label.x + badge.label.width <= badge.width - 5
-        and badge.label.fontSize <= badge.height * 0.2 + 1,
-        "compact state text must keep a readable inner gutter at " .. size)
-    assert(badge.label.text == "STEADY", "every compact size needs a short, unclipped state label")
+    assert(badge.housing.texCoord[1] == 0.07 and badge.housing.texCoord[2] == 0.924,
+        "the short panel must crop only transparent horizontal padding")
     for _, gem in ipairs(badge.chargeGems) do
         local diamondHalf = gem.glow.width * math.sqrt(2) / 2
         assert(math.abs(gem.glow.x) + diamondHalf <= badge.width / 2 + 0.001
@@ -420,6 +430,8 @@ for size, dimensions in pairs({ small = { 132, 48 }, medium = { 158, 56 }, large
             "compact charge jewels must fit inside the " .. size .. " housing")
         assert(badge.height / 2 - gem.glow.y + diamondHalf <= badge.height * 0.75,
             "compact charge jewels need clear space above the lower gold rim")
+        assert(gem.glow.y <= -badge.height * 0.18,
+            "compact jewels must sit below the lettering, not across it")
     end
 end
 settings.flightIndicatorSize = "medium"
@@ -430,7 +442,7 @@ UIParent.GetWidth = function() return 640 end
 UIParent.GetHeight = function() return 480 end
 UIParent.GetCenter = function() return 320, 240 end
 addon.RefreshFlightIndicator()
-assert(badge.x == -63 and badge.y == 38,
+assert(badge.x == -76 and badge.y == 38,
     "compact default must stay beside the launcher on a small screen")
 settings.flightIndicatorCompactX, settings.flightIndicatorCompactY = -1000, 1000
 addon.RefreshFlightIndicator()
@@ -451,11 +463,11 @@ settings.flightIndicatorLayout = "emblem"
 addon.RefreshFlightIndicator()
 assert(badge.x == 110 and badge.y == -80 and badge.width == 104
     and badge.icon.path:find("flight%-16%.png") and badge.housing.alpha == 0
-    and not badge.label.shown,
+    and not badge.label,
     "switching back must restore the full emblem and its own position")
 settings.flightIndicatorLayout = "compact"
 addon.RefreshFlightIndicator()
-assert(badge.x == -400 and badge.y == 300 and badge.width == 158,
+assert(badge.x == -400 and badge.y == 300 and badge.width == 132,
     "returning to rounded compact must restore its saved position")
 shift = false
 event("MODIFIER_STATE_CHANGED")
@@ -467,8 +479,14 @@ advance(0.3)
 assert(badge.icon.path:find("flight%-01%.png")
     and badge.chargeGems[1].core.alpha > 0,
     "rounded compact Skyriding must retain the dragon art and charge jewels")
-assert(badge.label.text == "SKYRIDE" and badge.label.y == -56 * 0.30,
-    "compact text must track the flight style without crowding the jewels")
+assert(badge.housing.path:find("compact%-skyride%.png"),
+    "the illustrated panel must track the actual Skyriding state")
+settings.flightIndicatorCompactTheme = "alternate"
+addon.RefreshFlightIndicator()
+assert(badge.housing.path:find("compact%-alternate%-skyride%.png"),
+    "the alternate wording must track the Skyriding state too")
+settings.flightIndicatorCompactTheme = "classic"
+addon.RefreshFlightIndicator()
 settings.flightIndicatorCharges = false
 addon.RefreshFlightIndicator()
 assert(badge.chargeGems[1].core.alpha == 0,
@@ -479,8 +497,8 @@ advance(0.3)
 assert(badge.chargeGems[1].core.alpha > 0,
     "restoring charges must relight miniature jewels")
 event("UNIT_SPELLCAST_START", "player", "compact-forward", 436854)
-assert(badge.label.text == "STEADY" and badge.label.y == -56 * 0.30,
-    "the short destination label must lift above cast progress")
+assert(badge.housing.path:find("compact%-steady%.png"),
+    "the destination panel must appear with the style-switch cast")
 advance(2.5)
 assert(badge.castTicks[6].alpha > badge.castTicks[7].alpha
     and badge.icon.path:find("flight%-05%.png")
@@ -494,7 +512,7 @@ assert(badge.scripts.OnUpdate and badge.style == "skyriding",
     "an early success must not shorten the compact morph")
 advance(1)
 assert(badge.style == "steady" and badge.icon.path:find("flight%-16%.png")
-    and badge.castTicks[1].alpha == 0 and badge.label.y == -56 * 0.40,
+    and badge.castTicks[1].alpha == 0 and badge.housing.path:find("compact%-steady%.png"),
     "rounded compact must settle on the steady art at cast completion")
 event("UNIT_SPELLCAST_START", "player", "compact-reverse", 460003)
 advance(2.5)

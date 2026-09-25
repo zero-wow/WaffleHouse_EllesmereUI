@@ -510,7 +510,7 @@ function addon.BuildAdventurePage(parent, yOffset)
             text = "Indicator Layout",
             values = { emblem = "Full Emblem", compact = "Rounded Compact" },
             order = { "emblem", "compact" },
-            tooltip = "Rounded Compact uses a painted-sky capsule and a raised creature medallion, with the live morph and flight-state text. Each layout has its own Shift-drag position. Your local install starts compact; public installs retain the full emblem when enabled.",
+            tooltip = "Rounded Compact uses two illustrated flight-state panels with integrated lettering and a raised creature medallion. Each layout has its own Shift-drag position. Your local install starts compact; public installs retain the full emblem when enabled.",
             getValue = function()
                 return GetSettings().flightIndicatorLayout
             end,
@@ -539,7 +539,7 @@ function addon.BuildAdventurePage(parent, yOffset)
         {
             type = "toggle",
             text = "Skyriding Charges",
-            tooltip = "Show shared Surge Forward / Skyward Ascent charges as jewels around either emblem size. The next empty jewel fills as its charge recovers. Charges hide in Steady Flight and whenever charge data is unavailable.",
+            tooltip = "Show shared Surge Forward / Skyward Ascent charges as jewels around the full emblem or below the compact panel lettering. The next empty jewel fills as its charge recovers. Charges hide in Steady Flight and whenever charge data is unavailable.",
             getValue = function()
                 return GetSettings().flightIndicatorCharges ~= false
             end,
@@ -554,7 +554,7 @@ function addon.BuildAdventurePage(parent, yOffset)
         {
             type = "toggle",
             text = "Cast Progress",
-            tooltip = "Show the subtle cast arc around either emblem size. It vanishes when the cast completes or is interrupted.",
+            tooltip = "Show cast progress around the full emblem or beneath the compact panel lettering. It vanishes when the cast completes or is interrupted.",
             getValue = function()
                 return GetSettings().flightIndicatorCastProgress ~= false
             end,
@@ -562,7 +562,21 @@ function addon.BuildAdventurePage(parent, yOffset)
                 GetSettings().flightIndicatorCastProgress = value == true
                 if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
             end,
-        }, nil
+        },
+        {
+            type = "dropdown",
+            text = "Compact Panel Theme",
+            values = { classic = "Steady / Skyride", alternate = "Cruise / Surge" },
+            order = { "classic", "alternate" },
+            tooltip = "Choose the illustrated wording on the short flight-state panels. This applies only to Rounded Compact and preserves the full emblem.",
+            getValue = function()
+                return GetSettings().flightIndicatorCompactTheme
+            end,
+            setValue = function(value)
+                GetSettings().flightIndicatorCompactTheme = value
+                if addon.RefreshFlightIndicator then addon.RefreshFlightIndicator() end
+            end,
+        }
     ); y = y - h
 
     _, h = W:SectionHeader(parent, "DELVE COMPANION", y); y = y - h

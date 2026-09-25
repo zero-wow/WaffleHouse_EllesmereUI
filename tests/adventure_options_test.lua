@@ -32,6 +32,12 @@ assert(main:find('WaffleHouseDB.flightIndicatorLayout = metadata', 1, true)
 assert(adventure:find('text = "Indicator Layout"', 1, true)
     and adventure:find('compact = "Rounded Compact"', 1, true),
     "both flight-indicator layouts must be selectable in Adventure")
+assert(main:find('WaffleHouseDB.flightIndicatorCompactTheme = metadata', 1, true)
+    and adventure:find('text = "Compact Panel Theme"', 1, true)
+    and adventure:find('classic = "Steady / Skyride"', 1, true)
+    and adventure:find('alternate = "Cruise / Surge"', 1, true)
+    and adventure:find('GetSettings().flightIndicatorCompactTheme = value', 1, true),
+    "the compact illustrated wording themes must be configurable and owner-visible")
 assert(adventure:find('text = "Skyriding Charges"', 1, true)
     and adventure:find('text = "Cast Progress"', 1, true),
     "both flight visuals must be configurable in Adventure")

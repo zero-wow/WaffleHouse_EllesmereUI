@@ -177,6 +177,14 @@ local function GetSettings()
             and metadata(ADDON_FOLDER, "X-WaffleHouse-FlightIndicatorDefault") == "1"
             and "compact" or "emblem"
     end
+    if WaffleHouseDB.flightIndicatorCompactTheme ~= "classic"
+        and WaffleHouseDB.flightIndicatorCompactTheme ~= "alternate" then
+        -- Let the author's local install preview the new lettering immediately.
+        local metadata = C_AddOns and C_AddOns.GetAddOnMetadata
+        WaffleHouseDB.flightIndicatorCompactTheme = metadata
+            and metadata(ADDON_FOLDER, "X-WaffleHouse-FlightIndicatorDefault") == "1"
+            and "alternate" or "classic"
+    end
     if WaffleHouseDB.flightIndicatorCharges == nil then
         WaffleHouseDB.flightIndicatorCharges = true
     end

@@ -50,12 +50,21 @@ local SWITCH_SPELLS = { [436854] = true, [460002] = true, [460003] = true }
 -- Try both because one may not be available until the player mounts.
 local CHARGE_SPELLS = { 372608, 372610 }
 local SIZES = { small = 76, medium = 104, large = 132 }
--- A purpose-built horizontal housing: its left medallion rises past the
--- capsule edge, while the text and six charge jewels occupy the sky to right.
+-- Two matching, short painted panels keep the lettering part of the artwork.
+-- The medallion rises past the capsule edge and retains the live creature art.
 local COMPACT_SIZES = {
-    small = { 132, 48 }, medium = { 158, 56 }, large = { 184, 66 },
+    small = { 114, 48 }, medium = { 132, 56 }, large = { 156, 66 },
 }
-local COMPACT_HOUSING = ART_ROOT .. "compact-housing.png"
+local COMPACT_PANELS = {
+    classic = {
+        steady = ART_ROOT .. "compact-steady.png",
+        skyriding = ART_ROOT .. "compact-skyride.png",
+    },
+    alternate = {
+        steady = ART_ROOT .. "compact-alternate-steady.png",
+        skyriding = ART_ROOT .. "compact-alternate-skyride.png",
+    },
+}
 local DEFAULT_X, DEFAULT_Y = 0, 180
 local WHITE = "Interface\\Buttons\\WHITE8X8"
 local RADAR_DEFAULT_RIGHT, RADAR_DEFAULT_CENTER_FROM_TOP, RADAR_GAP = 170, 202, 8
@@ -168,21 +177,22 @@ local function PositionOrnaments()
         local width, height = badge:GetWidth(), badge:GetHeight()
         local left = -width / 2 + height * 1.16
         local step = (width - height * 1.16 - 15) / 5
-        local y = -height * 0.11
+        -- Tiny jewels live below the lettering, still above the painted rim.
+        local y = -height * 0.19
         for index, gem in ipairs(badge.chargeGems) do
             for _, part in ipairs({ gem.glow, gem.bezel, gem.core }) do
                 part:ClearAllPoints()
                 part:SetPoint("CENTER", badge, "CENTER", left + (index - 1) * step, y)
             end
-            gem.glow:SetSize(height * 0.13, height * 0.13)
-            gem.bezel:SetSize(height * 0.105, height * 0.105)
-            gem.core:SetSize(height * 0.067, height * 0.067)
+            gem.glow:SetSize(height * 0.065, height * 0.065)
+            gem.bezel:SetSize(height * 0.055, height * 0.055)
+            gem.core:SetSize(height * 0.038, height * 0.038)
         end
         for index, tick in ipairs(badge.castTicks) do
             tick:ClearAllPoints()
             tick:SetPoint("CENTER", badge, "CENTER",
                 left + (index - 1) * step * 5 / (CAST_TICKS - 1), y)
-            tick:SetSize(height * 0.075, height * 0.036)
+            tick:SetSize(height * 0.042, height * 0.025)
             tick:SetRotation(0)
         end
         return
@@ -207,17 +217,15 @@ local function PositionOrnaments()
     end
 end
 
-local function SetStyleLabel(style)
-    if not (badge and badge.label and style) then return end
-    -- The creature carries the full story. One centered word is enough here;
-    -- longer labels wrap against the medallion and overwhelm the painted sky.
-    badge.label:SetText(style == "steady" and "STEADY" or "SKYRIDE")
-    if badge.layout == "compact" then
-        local height = badge:GetHeight()
-        local raised = animation ~= nil or style == "skyriding"
-        badge.label:ClearAllPoints()
-        badge.label:SetPoint("TOPLEFT", badge, "TOPLEFT", height * 1.07,
-            -height * (raised and 0.30 or 0.40))
+local function SetPanelStyle(style)
+    if not (badge and badge.housing and style) then return end
+    local settings = addon.GetSettings and addon.GetSettings()
+    local theme = settings and settings.flightIndicatorCompactTheme == "alternate"
+        and "alternate" or "classic"
+    local path = COMPACT_PANELS[theme][style]
+    if path and badge.housingPath ~= path then
+        badge.housing:SetTexture(path)
+        badge.housingPath = path
     end
 end
 
@@ -236,16 +244,7 @@ local function PositionArtwork()
     badge.creature:SetSize(artSize * 0.90, artSize * 0.90)
     badge.artSize = artSize
     badge.housing:SetAlpha(compact and 1 or 0)
-    if compact then
-        badge.label:SetWidth(width - height * 1.07 - 9)
-        badge.label:SetFont((EllesmereUI and EllesmereUI.GetFontPath
-            and EllesmereUI.GetFontPath("extras")) or STANDARD_TEXT_FONT
-            or "Fonts\\FRIZQT__.TTF", math.floor(height * 0.195 + 0.5), "OUTLINE")
-        SetStyleLabel(animation and animation.to or badge.style)
-        badge.label:Show()
-    else
-        badge.label:Hide()
-    end
+    if compact then SetPanelStyle(animation and animation.to or badge.style) end
 end
 
 local function CreateBadge()
@@ -274,15 +273,12 @@ local function CreateBadge()
 
     badge.housing = badge:CreateTexture(nil, "ARTWORK", nil, 3)
     badge.housing:SetAllPoints()
-    badge.housing:SetTexture(COMPACT_HOUSING)
+    badge.housing:SetTexture(COMPACT_PANELS.classic.steady)
+    badge.housingPath = COMPACT_PANELS.classic.steady
     -- The source is padded to power-of-two dimensions. Crop only the empty
-    -- vertical canvas so the illustrated capsule retains its rounded edge.
-    badge.housing:SetTexCoord(0, 1, 0.15, 0.85)
+    -- canvas so the medallion and shorter capsule retain their proportions.
+    badge.housing:SetTexCoord(0.07, 0.924, 0.137, 0.86)
     badge.housing:SetAlpha(0)
-    badge.label = badge:CreateFontString(nil, "OVERLAY")
-    badge.label:SetTextColor(1, 0.91, 0.73, 1)
-    badge.label:SetJustifyH("CENTER")
-    badge.label:Hide()
 
     -- The same flight paintings and creature morph run inside the raised
     -- medallion; compact only changes their layout, not the cast sequence.
@@ -333,6 +329,15 @@ local function CreateBadge()
         texture:SetTexture(path)
         texture:SetAlpha(0)
         badge.preloadedFrames[#badge.preloadedFrames + 1] = texture
+    end
+    badge.preloadedPanels = {}
+    for _, theme in ipairs({ "classic", "alternate" }) do
+        for _, style in ipairs({ "steady", "skyriding" }) do
+            local texture = badge:CreateTexture(nil, "BACKGROUND")
+            texture:SetTexture(COMPACT_PANELS[theme][style])
+            texture:SetAlpha(0)
+            badge.preloadedPanels[#badge.preloadedPanels + 1] = texture
+        end
     end
 
     badge:SetScript("OnDragStart", function(self)
@@ -485,7 +490,7 @@ local function ShowStaticStyle(style)
     badge.original:SetAlpha(0)
     HideCastProgress()
     badge.style = style
-    SetStyleLabel(style)
+    SetPanelStyle(style)
     badge:Show()
     SyncChargeMode()
 end
@@ -619,7 +624,7 @@ local function StartStyleCast(castGUID)
         startTime = startTime,
         duration = duration,
     }
-    SetStyleLabel(animation.to)
+    SetPanelStyle(animation.to)
     badge.chargeTicker:Hide()
     HideChargeGems()
     badge:SetScript("OnUpdate", RenderTransition)
