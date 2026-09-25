@@ -1,5 +1,45 @@
 local _, addon = ...
 
+-- An absent setting means allowed, preserving the existing behavior for
+-- players who have not chosen any location restrictions yet.
+addon.AutoMountLocationTypes = {
+    { key = "world", label = "Allow Open World",
+      tooltip = "Includes cities and outdoor world zones. The existing outdoors, stationary, and safety checks still apply." },
+    { key = "dungeon", label = "Allow Dungeons",
+      tooltip = "Allow an automatic mount after combat in dungeon instances where the game permits mounting." },
+    { key = "raid", label = "Allow Raids",
+      tooltip = "Allow an automatic mount after combat in raid instances where the game permits mounting." },
+    { key = "delve", label = "Allow Delves",
+      tooltip = "Delves are recognized separately from other scenarios by their instance difficulty." },
+    { key = "scenario", label = "Allow Other Scenarios",
+      tooltip = "Scenarios other than delves, including solo story scenarios." },
+    { key = "pvp", label = "Allow Battlegrounds & Arenas",
+      tooltip = "Allow automatic mounting after combat in battlegrounds and arenas when permitted." },
+    { key = "housing", label = "Allow Housing",
+      tooltip = "Housing neighborhoods and interiors. Indoor areas remain blocked by the existing outdoors check." },
+    { key = "other", label = "Allow Other Instances",
+      tooltip = "Unrecognized instance types and world-tier instances such as Lairs. New instance types remain allowed unless you turn this off." },
+}
+
+local function CurrentLocationType()
+    if type(GetInstanceInfo) ~= "function" then return "other" end
+    local _, instanceType, difficultyID, _, _, _, _, _, _, _, hasWorldTier = GetInstanceInfo()
+    if difficultyID == 208 then return "delve" end
+    if instanceType == nil or instanceType == "none" then return "world" end
+    if hasWorldTier == true then return "other" end
+    if instanceType == "party" then return "dungeon" end
+    if instanceType == "raid" then return "raid" end
+    if instanceType == "scenario" then return "scenario" end
+    if instanceType == "pvp" or instanceType == "arena" then return "pvp" end
+    if instanceType == "neighborhood" or instanceType == "interior" then return "housing" end
+    return "other"
+end
+
+function addon.IsAutoMountLocationAllowed(settings)
+    local locations = settings and settings.autoMountLocations
+    return type(locations) ~= "table" or locations[CurrentLocationType()] ~= false
+end
+
 -- SummonByID is the journal's direct mount path. LiteMount's secure buttons
 -- can also cast forms, use items, and run macros; those actions must not be
 -- programmatically clicked from a combat-exit event.
@@ -38,7 +78,8 @@ end
 
 local function TryAutoMount()
     local settings = addon.GetSettings and addon.GetSettings()
-    if not settings or settings.autoMountAfterCombat ~= true or not CanAutoMount() then return end
+    if not settings or settings.autoMountAfterCombat ~= true
+        or not addon.IsAutoMountLocationAllowed(settings) or not CanAutoMount() then return end
 
     local mountID = 0
     if settings.autoMountProvider ~= "wow" then

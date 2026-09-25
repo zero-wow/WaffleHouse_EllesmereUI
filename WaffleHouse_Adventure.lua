@@ -465,6 +465,31 @@ function addon.BuildAdventurePage(parent, yOffset)
         }
     ); y = y - h
 
+    _, h = W:SectionHeader(parent, "AUTO-MOUNT LOCATIONS", y); y = y - h
+    local function MountLocationControl(info)
+        return {
+            type = "toggle",
+            text = info.label,
+            tooltip = info.tooltip,
+            getValue = function()
+                local locations = GetSettings().autoMountLocations
+                return type(locations) ~= "table" or locations[info.key] ~= false
+            end,
+            setValue = function(value)
+                local settings = GetSettings()
+                if type(settings.autoMountLocations) ~= "table" then settings.autoMountLocations = {} end
+                settings.autoMountLocations[info.key] = value == true
+            end,
+        }
+    end
+    local locationTypes = addon.AutoMountLocationTypes or {}
+    for index = 1, #locationTypes, 2 do
+        _, h = W:DualRow(parent, y,
+            MountLocationControl(locationTypes[index]),
+            locationTypes[index + 1] and MountLocationControl(locationTypes[index + 1]) or nil
+        ); y = y - h
+    end
+
     _, h = W:SectionHeader(parent, "DELVE COMPANION", y); y = y - h
     _, h = W:DualRow(parent, y,
         {

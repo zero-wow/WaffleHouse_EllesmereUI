@@ -28,8 +28,24 @@ IsOutdoors = function() return not state.indoors end
 GetUnitSpeed = function() return state.moving and 7 or 0 end
 UnitCastingInfo = function() return state.casting end
 UnitChannelInfo = function() return state.channeling end
+GetInstanceInfo = function()
+    return "Test Area", state.instanceType or "none", state.difficultyID or 0,
+        nil, nil, nil, nil, nil, nil, nil, state.worldTier
+end
 
 assert(loadfile(source))("WaffleHouse_EllesmereUI", addon)
+assert(#addon.AutoMountLocationTypes == 8, "Mounting must offer all broad location types")
+local optionKeys = {}
+for _, info in ipairs(addon.AutoMountLocationTypes) do
+    assert(not optionKeys[info.key], "location option keys must be unique")
+    optionKeys[info.key] = true
+end
+local optionsFile = assert(io.open("WaffleHouse_Adventure.lua", "rb"))
+local optionsSource = optionsFile:read("*a")
+optionsFile:close()
+assert(optionsSource:find('W:SectionHeader(parent, "AUTO-MOUNT LOCATIONS"', 1, true)
+    and optionsSource:find("addon.AutoMountLocationTypes", 1, true),
+    "Mounting location switches must be surfaced on the Adventure page")
 
 local function combatCycle()
     frame:OnEvent("PLAYER_REGEN_DISABLED")
@@ -106,5 +122,33 @@ local pending = timers
 timers = {}
 for _, callback in ipairs(pending) do callback() end
 assert(#summons == count + 1, "a new combat must cancel the stale attempt")
+
+local locations = {
+    { key = "world", instanceType = "none" },
+    { key = "dungeon", instanceType = "party" },
+    { key = "raid", instanceType = "raid" },
+    { key = "delve", instanceType = "scenario", difficultyID = 208 },
+    { key = "scenario", instanceType = "scenario", difficultyID = 12 },
+    { key = "pvp", instanceType = "pvp" },
+    { key = "pvp", instanceType = "arena" },
+    { key = "housing", instanceType = "neighborhood" },
+    { key = "housing", instanceType = "interior" },
+    { key = "other", instanceType = "party", worldTier = true },
+    { key = "other", instanceType = "future-instance" },
+}
+for _, location in ipairs(locations) do
+    state.instanceType = location.instanceType
+    state.difficultyID = location.difficultyID
+    state.worldTier = location.worldTier
+    settings.autoMountLocations = { [location.key] = false }
+    count = #summons
+    combatCycle()
+    assert(#summons == count, location.key .. " must block when its switch is off")
+    settings.autoMountLocations[location.key] = true
+    combatCycle()
+    assert(#summons == count + 1, location.key .. " must permit when its switch is on")
+end
+settings.autoMountLocations = nil
+state.instanceType, state.difficultyID, state.worldTier = nil, nil, nil
 
 io.write("auto mount tests passed\n")
