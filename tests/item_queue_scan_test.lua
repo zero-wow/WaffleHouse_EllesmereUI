@@ -311,6 +311,20 @@ test("currency grants queue under the dedicated currency category", function()
         "a usable Voidlight Marl grant must show as a Currency Item instead of being excluded")
 end)
 
+test("Surplus Auchenai Weaponry's numeric Garrison Resources grant reaches the popup", function()
+    local state = fixture({item(116118, {
+        name = "Surplus Auchenai Weaponry",
+        tooltip = tooltip("Surplus Auchenai Weaponry", "Soulbound",
+            "Use: Gain 100 Garrison Resources.", "No sell price"),
+    })})
+    local candidates = state.api.scan()
+    check(#candidates == 1 and candidates[1].category == "currency",
+        "numeric Garrison Resources grants must enter the Currency category")
+    state.api.refresh()
+    check(state.button.shown and state.button._queueItem.itemID == 116118,
+        "the popup should show the usable Auchenai currency item")
+end)
+
 test("Pepe costume use wording reaches the appearance queue and secure item button", function()
     local state = fixture({item(42, {
         name = "A Tiny Explorer's Hat", usable = false,

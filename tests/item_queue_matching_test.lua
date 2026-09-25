@@ -94,8 +94,16 @@ assertFalse(IsAppearanceUnlockTooltip("a tiny explorer's hat when summoned, pepe
 
 assertTrue(IsCurrencyGrantTooltip("use: gain a large amount of voidlight marl"),
     "a direct Voidlight Marl currency grant must be recognized for the Currency Items queue category")
+assertTrue(IsCurrencyGrantTooltip("surplus auchenai weaponry soulbound use: gain 100 garrison resources. no sell price"),
+    "numeric Garrison Resources grants must match without an 'of' in the Use text")
+assertTrue(IsCurrencyGrantTooltip("use: gain 1,000 valorstones."),
+    "other direct numeric currency grants must also match")
 assertFalse(IsCurrencyGrantTooltip("use: gain a large amount of experience"),
     "experience gains must not be mistaken for currency grants")
+assertFalse(IsCurrencyGrantTooltip("use: gain 100 health."),
+    "numeric health gains must not be mistaken for currency grants")
+assertFalse(IsCurrencyGrantTooltip("use: gain 100 haste for 20 sec."),
+    "temporary stat buffs must not be mistaken for currency grants")
 
 assertTrue(source:find('combination = not isDarkmoonCard and isCombination and HasCompleteCombinationRequirements%(tooltip%)') ~= nil,
     "combination match must use the completeness gate")

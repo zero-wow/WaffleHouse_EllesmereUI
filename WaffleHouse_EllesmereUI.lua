@@ -2021,16 +2021,28 @@ end
 
 local function IsCurrencyGrantTooltip(tooltip)
     -- Items such as Nahuut's Second-Favorite Chew Toy read "Use: Gain a
-    -- large amount of Voidlight Marl."  They are consumable currency grants,
-    -- not boxes or generic gear.  Retain a narrow Use/Gain/amount-of shape so
-    -- stat, health, mana, and experience effects do not enter this category.
+    -- large amount of Voidlight Marl." Others, including Surplus Auchenai
+    -- Weaponry, say "Use: Gain 100 Garrison Resources." without "of".
+    -- Both forms are direct consumable grants, not boxes or generic gear.
     if not tooltip:find("use: gain", 1, true) then return false end
-    local granted = tooltip:match("use:%s*gain%s+.-%s+of%s+([%a][%a%s'%-]*)")
+    local granted = tooltip:match("use:%s*gain%s+%d[%d,]*%s+([%a][%a%s'%-]*)")
+        or tooltip:match("use:%s*gain%s+.-%s+of%s+([%a][%a%s'%-]*)")
     if not IsSafeText(granted) then return false end
     granted = granted:lower()
     return not granted:find("experience", 1, true)
+        and not granted:match("^xp%f[%A]")
         and not granted:find("health", 1, true)
         and not granted:find("mana", 1, true)
+        and not granted:find("strength", 1, true)
+        and not granted:find("agility", 1, true)
+        and not granted:find("intellect", 1, true)
+        and not granted:find("stamina", 1, true)
+        and not granted:find("haste", 1, true)
+        and not granted:find("mastery", 1, true)
+        and not granted:find("critical strike", 1, true)
+        and not granted:find("versatility", 1, true)
+        and not granted:find("armor", 1, true)
+        and not granted:find(" for ", 1, true)
 end
 
 local function HasCompleteCombinationRequirements(tooltip)
