@@ -85,7 +85,7 @@ local function NewFrame(name)
         function label:SetWidth(width) self.width = width end
         function label:SetFont(path, size) self.font, self.fontSize = path, size end
         function label:SetTextColor() end
-        function label:SetJustifyH() end
+        function label:SetJustifyH(justify) self.justify = justify end
         function label:SetText(value) self.text = value end
         function label:Show() self.shown = true end
         function label:Hide() self.shown = false end
@@ -398,7 +398,8 @@ assert(badge.width == 158 and badge.height == 56
     "rounded compact view should sit beside the default radar launcher")
 assert(badge.housing.path:find("compact%-housing%.png")
     and badge.housing.alpha == 1 and badge.icon.path:find("flight%-16%.png")
-    and badge.label.shown and badge.label.text == "STEADY FLIGHT",
+    and badge.label.shown and badge.label.text == "STEADY"
+    and badge.label.justify == "CENTER" and badge.label.y == -56 * 0.40,
     "compact view must have a separate rounded housing, live art, and state text")
 assert(badge.icon.x < 0 and badge.icon.width < badge.height
     and badge.housing.sublevel > badge.icon.sublevel,
@@ -411,9 +412,7 @@ for size, dimensions in pairs({ small = { 132, 48 }, medium = { 158, 56 }, large
     assert(badge.label.x + badge.label.width <= badge.width - 5
         and badge.label.fontSize <= badge.height * 0.2 + 1,
         "compact state text must keep a readable inner gutter at " .. size)
-    if size == "small" then
-        assert(badge.label.text == "STEADY", "small size needs a short, unclipped state label")
-    end
+    assert(badge.label.text == "STEADY", "every compact size needs a short, unclipped state label")
     for _, gem in ipairs(badge.chargeGems) do
         local diamondHalf = gem.glow.width * math.sqrt(2) / 2
         assert(math.abs(gem.glow.x) + diamondHalf <= badge.width / 2 + 0.001
@@ -468,7 +467,8 @@ advance(0.3)
 assert(badge.icon.path:find("flight%-01%.png")
     and badge.chargeGems[1].core.alpha > 0,
     "rounded compact Skyriding must retain the dragon art and charge jewels")
-assert(badge.label.text == "SKYRIDING", "compact text must track the flight style")
+assert(badge.label.text == "SKYRIDE" and badge.label.y == -56 * 0.30,
+    "compact text must track the flight style without crowding the jewels")
 settings.flightIndicatorCharges = false
 addon.RefreshFlightIndicator()
 assert(badge.chargeGems[1].core.alpha == 0,
@@ -479,6 +479,8 @@ advance(0.3)
 assert(badge.chargeGems[1].core.alpha > 0,
     "restoring charges must relight miniature jewels")
 event("UNIT_SPELLCAST_START", "player", "compact-forward", 436854)
+assert(badge.label.text == "STEADY" and badge.label.y == -56 * 0.30,
+    "the short destination label must lift above cast progress")
 advance(2.5)
 assert(badge.castTicks[6].alpha > badge.castTicks[7].alpha
     and badge.icon.path:find("flight%-05%.png")
@@ -492,7 +494,7 @@ assert(badge.scripts.OnUpdate and badge.style == "skyriding",
     "an early success must not shorten the compact morph")
 advance(1)
 assert(badge.style == "steady" and badge.icon.path:find("flight%-16%.png")
-    and badge.castTicks[1].alpha == 0,
+    and badge.castTicks[1].alpha == 0 and badge.label.y == -56 * 0.40,
     "rounded compact must settle on the steady art at cast completion")
 event("UNIT_SPELLCAST_START", "player", "compact-reverse", 460003)
 advance(2.5)

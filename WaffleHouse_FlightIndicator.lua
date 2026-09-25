@@ -209,9 +209,16 @@ end
 
 local function SetStyleLabel(style)
     if not (badge and badge.label and style) then return end
-    local steady = badge.layout == "compact" and badge:GetHeight() <= 48
-        and "STEADY" or "STEADY FLIGHT"
-    badge.label:SetText(style == "steady" and steady or "SKYRIDING")
+    -- The creature carries the full story. One centered word is enough here;
+    -- longer labels wrap against the medallion and overwhelm the painted sky.
+    badge.label:SetText(style == "steady" and "STEADY" or "SKYRIDE")
+    if badge.layout == "compact" then
+        local height = badge:GetHeight()
+        local raised = animation ~= nil or style == "skyriding"
+        badge.label:ClearAllPoints()
+        badge.label:SetPoint("TOPLEFT", badge, "TOPLEFT", height * 1.07,
+            -height * (raised and 0.30 or 0.40))
+    end
 end
 
 local function PositionArtwork()
@@ -230,8 +237,6 @@ local function PositionArtwork()
     badge.artSize = artSize
     badge.housing:SetAlpha(compact and 1 or 0)
     if compact then
-        badge.label:ClearAllPoints()
-        badge.label:SetPoint("TOPLEFT", badge, "TOPLEFT", height * 1.07, -height * 0.33)
         badge.label:SetWidth(width - height * 1.07 - 9)
         badge.label:SetFont((EllesmereUI and EllesmereUI.GetFontPath
             and EllesmereUI.GetFontPath("extras")) or STANDARD_TEXT_FONT
@@ -275,8 +280,8 @@ local function CreateBadge()
     badge.housing:SetTexCoord(0, 1, 0.15, 0.85)
     badge.housing:SetAlpha(0)
     badge.label = badge:CreateFontString(nil, "OVERLAY")
-    badge.label:SetTextColor(1, 0.87, 0.58, 1)
-    badge.label:SetJustifyH("LEFT")
+    badge.label:SetTextColor(1, 0.91, 0.73, 1)
+    badge.label:SetJustifyH("CENTER")
     badge.label:Hide()
 
     -- The same flight paintings and creature morph run inside the raised
