@@ -172,6 +172,10 @@ for _, fragment in ipairs({
     '"FROZEN SLOT MANAGER"',
     'W:DropdownWithOffsets',
     'IsMainBagsButton(button)',
+    'catcher:RegisterForClicks("RightButtonUp")',
+    'catcher:SetPassThroughButtons("LeftButton", "MiddleButton")',
+    'mouseButton ~= "RightButton" or not IsFreezeModifierDown()',
+    'and right-click an item in OneBag',
 }) do
     assert(source:find(fragment, 1, true), "missing frozen-slot feature fragment: " .. fragment)
 end

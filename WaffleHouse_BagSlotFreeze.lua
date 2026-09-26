@@ -232,7 +232,10 @@ local function GetOrCreateVisual(button)
     local catcher = CreateFrame("Button", nil, button)
     catcher:SetAllPoints(button)
     catcher:SetFrameLevel(button:GetFrameLevel() + 12)
-    catcher:RegisterForClicks("LeftButtonUp")
+    catcher:RegisterForClicks("RightButtonUp")
+    -- The full-slot overlay must not swallow Ctrl+left-click item preview.
+    -- Configure pass-through when this child is created out of combat.
+    catcher:SetPassThroughButtons("LeftButton", "MiddleButton")
     catcher:Hide()
     entry.catcher = catcher
 
@@ -257,7 +260,7 @@ local function GetOrCreateVisual(button)
     right:SetWidth(1); right:SetPoint("TOPRIGHT"); right:SetPoint("BOTTOMRIGHT")
 
     catcher:SetScript("OnClick", function(_, mouseButton)
-        if mouseButton ~= "LeftButton" or not IsFreezeModifierDown() then return end
+        if mouseButton ~= "RightButton" or not IsFreezeModifierDown() then return end
         local bag, slot, info = GetSlotData(button)
         if not (bag and IsMainBagsButton(button)) then return end
         local frozen = GetFrozenSlots()
@@ -674,7 +677,7 @@ function addon.BuildBagsPage(parent, yOffset)
         {
             type = "toggle",
             text = "Freeze Bag Slots",
-            tooltip = "Hold the selected modifier over an item in OneBag's Main Bags section and left-click it to freeze or unfreeze that item. Frozen items remain in their exact physical bag slots when using Sort Items.",
+            tooltip = "Hold the selected modifier and right-click an item in OneBag's Main Bags section to freeze or unfreeze it. Left-click remains available for item preview. Frozen items stay in their physical bag slots when using Sort Items.",
             getValue = function() return GetSettings().bagSlotFreezeEnabled ~= false end,
             setValue = function(value) GetSettings().bagSlotFreezeEnabled = value and true or false; Refresh() end,
         },
@@ -683,7 +686,7 @@ function addon.BuildBagsPage(parent, yOffset)
             text = "Freeze Modifier",
             values = { ctrl = "Ctrl", shift = "Shift", alt = "Alt", disabled = "Disabled" },
             order = { "ctrl", "shift", "alt", "disabled" },
-            tooltip = "Hold this key while hovering a Main Bags item to reveal the frosted-lock preview and enable click-to-freeze. Disabled turns the feature off without removing saved freezes.",
+            tooltip = "Hold this key while hovering a Main Bags item to reveal the frosted-lock preview and enable right-click-to-freeze. Disabled turns the feature off without removing saved freezes.",
             getValue = function() return GetSettings().bagSlotFreezeModifier end,
             setValue = function(value) GetSettings().bagSlotFreezeModifier = value; Refresh() end,
         }
