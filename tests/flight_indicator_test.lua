@@ -477,6 +477,15 @@ assert(badge.housing.path:find("compact%-steady%.png"),
 assert(badge.icon.x < 0 and badge.icon.width < badge.height
     and badge.housing.sublevel > badge.icon.sublevel,
     "the creature medallion must project from the left side of the capsule")
+addon.SetFlightIndicatorWidth("compact", 252)
+local expectedArtX = -badge.width / 2 + badge.height * 0.60
+assert(math.abs(expectedArtX - (-badge.width / 2 + badge.height * 0.56) - 4) < 0.5,
+    "the owner's compact size needs an approximately four-pixel rightward correction")
+for _, texture in ipairs({ badge.icon, badge.blend, badge.original, badge.creature }) do
+    assert(math.abs(texture.x - expectedArtX) < 0.001,
+        "all compact art layers must share the corrected medallion center")
+end
+settings.flightIndicatorCompactWidth = nil
 for size, dimensions in pairs({ small = { 114, 48 }, medium = { 132, 56 }, large = { 156, 66 } }) do
     settings.flightIndicatorSize = size
     addon.RefreshFlightIndicator()
@@ -484,6 +493,13 @@ for size, dimensions in pairs({ small = { 114, 48 }, medium = { 132, 56 }, large
         "rounded compact size must scale the authored housing at " .. size)
     assert(badge.housing.texCoord[1] == 0.07 and badge.housing.texCoord[2] == 0.924,
         "the short panel must crop only transparent horizontal padding")
+    local alignedX = -badge.width / 2 + badge.height * 0.60
+    for _, texture in ipairs({ badge.icon, badge.blend, badge.original, badge.creature }) do
+        assert(math.abs(texture.x - alignedX) < 0.001
+            and texture.x - texture.width / 2 >= -badge.width / 2
+            and texture.x + texture.width / 2 <= badge.width / 2,
+            "every compact art layer must align and stay inside the " .. size .. " housing")
+    end
     local expectedLeft = -badge.width / 2 + badge.height * 1.16 - 10
     assert(math.abs(badge.chargeGems[1].shadow.x - expectedLeft) < 0.001
         and math.abs(badge.castTicks[1].x - expectedLeft) < 0.001
