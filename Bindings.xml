@@ -1,7 +1,20 @@
 <Bindings>
     <Binding name="CLICK WaffleHouseItemQueueButton:LeftButton" header="WAFFLEHOUSE" />
-    <Binding name="WH_RANDOM_SUMMONER" header="WAFFLEHOUSE">WaffleHouseRandomSummonerToggle()</Binding>
-    <Binding name="WH_RANDOM_MOUNT" header="WAFFLEHOUSE">WaffleHouseRandomSummonerMount()</Binding>
-    <Binding name="WH_RANDOM_PET" header="WAFFLEHOUSE">WaffleHouseRandomSummonerPet()</Binding>
-    <Binding name="CLICK WaffleHouseRandomToyKeyButton:LeftButton" header="WAFFLEHOUSE" />
+    <Binding name="WH_RANDOM_SUMMONER">WaffleHouseRandomSummonerToggle()</Binding>
+    <Binding name="WH_RANDOM_MOUNT">WaffleHouseRandomSummonerMount()</Binding>
+    <Binding name="WH_RANDOM_PET">WaffleHouseRandomSummonerPet()</Binding>
+    <Binding name="CLICK WaffleHouseRandomMountKeyButton:LeftButton" />
+    <Binding name="CLICK WaffleHouseRandomToyKeyButton:LeftButton" />
+    <Binding name="CLICK WaffleHouseRandomShortcut01:LeftButton" />
+    <Binding name="CLICK WaffleHouseRandomShortcut02:LeftButton" />
+    <Binding name="CLICK WaffleHouseRandomShortcut03:LeftButton" />
+    <Binding name="CLICK WaffleHouseRandomShortcut04:LeftButton" />
+    <Binding name="CLICK WaffleHouseRandomShortcut05:LeftButton" />
+    <Binding name="CLICK WaffleHouseRandomShortcut06:LeftButton" />
+    <Binding name="CLICK WaffleHouseRandomShortcut07:LeftButton" />
+    <Binding name="CLICK WaffleHouseRandomShortcut08:LeftButton" />
+    <Binding name="CLICK WaffleHouseRandomShortcut09:LeftButton" />
+    <Binding name="CLICK WaffleHouseRandomShortcut10:LeftButton" />
+    <Binding name="CLICK WaffleHouseRandomShortcut11:LeftButton" />
+    <Binding name="CLICK WaffleHouseRandomShortcut12:LeftButton" />
 </Bindings>

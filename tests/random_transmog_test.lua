@@ -66,6 +66,9 @@ end
 
 C_TransmogOutfitInfo = {
     GetOutfitsInfo = function() return entries end,
+    GetOutfitInfo = function(id)
+        for _, entry in ipairs(entries) do if entry.outfitID == id then return entry end end
+    end,
     GetOutfitInfoByPlayerFacingIndex = function(index) return entries[index] end,
     GetActiveOutfitID = function() return activeID end,
     IsLockedOutfit = function(id) return id == 5 or state.lockedActive == true end,
@@ -96,6 +99,15 @@ assert(button.back.path:find("button-back.png", 1, true)
     and button.front.path:find("button-front.png", 1, true)
     and button.fill.path:find("button-fill-atlas.png", 1, true)
     and #button.gems == 4, "button must layer artwork, fill, bezel and gems")
+
+local reverseLookup = C_TransmogOutfitInfo.GetOutfitInfoByPlayerFacingIndex
+C_TransmogOutfitInfo.GetOutfitInfoByPlayerFacingIndex = function() return nil end
+entries[2].playerFacingOutfitIndex = 2
+events:OnEvent("TRANSMOG_OUTFITS_CHANGED")
+advance(0)
+assert(button.attributes["outfit-index"] == 2,
+    "stable outfit ID lookup must keep named outfits armed when reverse index lookup is temporarily empty")
+C_TransmogOutfitInfo.GetOutfitInfoByPlayerFacingIndex = reverseLookup
 
 advance(150)
 button:OnUpdate(0.2)

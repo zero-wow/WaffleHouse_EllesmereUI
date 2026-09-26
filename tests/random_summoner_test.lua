@@ -61,6 +61,7 @@ C_MountJournal = {
     end,
     SummonByID = function(id) state.mount = id end,
 }
+C_Spell = { GetSpellInfo = function(id) return { name = "Mount Spell " .. id } end }
 
 local petInfo = {
     ["p1"] = { speciesID = 10, name = "Store Kitten", icon = 1, isFavorite = false,
@@ -131,7 +132,10 @@ local secureToy = { attributes = {}, SetAttribute = function(self, key, value) s
 assert(S.PrepareToyButton(secureToy) and secureToy.attributes.type == "toy"
     and secureToy.attributes.toy == 1002, "toy use must be armed as a secure toy action")
 assert(state.toy == nil, "addon Lua must not call the protected UseToy function")
-assert(S.Summon("mount") and state.mount == 4)
+local secureMount = { attributes = {}, SetAttribute = function(self, key, value) self.attributes[key] = value end }
+assert(S.PrepareMountButton(secureMount) and secureMount.attributes.type == "spell"
+    and secureMount.attributes.spell == "Mount Spell 104", "mount must use a secure spell action")
+assert(state.mount == nil, "addon Lua must not call the protected mount journal summon")
 assert(S.Summon("pet") and state.pet == "p1")
 
 state.combat = true
@@ -139,13 +143,42 @@ assert(S.PrepareToyButton(secureToy) == false, "secure toy attributes must not c
 state.combat = false
 assert(S.DetectSourcePacks("Promotion") .sub12 == nil,
     "generic promotions must never be mislabeled as subscription rewards")
+assert(S.DetectGroup("pet", "Pierre", "A cooking fire") == "Cooking")
+assert(S.DetectGroup("pet", "Forge Helper", "An anvil for blacksmiths") == "Blacksmith")
+assert(S.DetectGroup("toy", "Banner of the Court", "") == "Flag")
+assert(S.GetRating("mount", 4) == 2, "unrated mounts should remain in the random pool")
+S.SetRating("mount", 4, 0)
+assert(S.Pick("mount", mounts) == nil, "rating zero must disable random selection")
+S.SetRating("mount", 4, 2)
+assert(S.SetGroup("mount", 1, "Auction House"))
+assert(S.GetGroup("mount", { id = 1, group = "Travel" }) == "Auction House",
+    "manual groups must override detection")
+local customMount = S.CreateShortcut("mount")
+S.GetSettings().shortcuts[customMount].filter = "Auction House"
+assert(S.ActivateShortcut(customMount, secureMount) and secureMount.attributes.spell == "Mount Spell 101",
+    "custom shortcut should arm only mounts from its selected utility group")
+local customToy = S.CreateShortcut("toy")
+assert(S.SetGroup("toy", 1002, "Morph"))
+S.GetSettings().shortcuts[customToy].filter = "Morph"
+assert(S.ActivateShortcut(customToy, secureToy) and secureToy.attributes.toy == 1002,
+    "toy shortcut should arm the selected group through the secure button")
 
 S.Toggle()
 local popup = namedFrames.WaffleHouseRandomSummoner
-assert(popup and popup:IsShown() and popup:GetWidth() == 522 and popup:GetHeight() == 562,
+assert(popup and popup:IsShown() and popup:GetWidth() == 600 and popup:GetHeight() == 660,
     "popup must open through its public action")
+popup.shortcutToggle.scripts.OnClick()
+assert(popup.keysPage:IsShown(), "shortcut configuration must open inside the current category")
+popup.tabs.pet.scripts.OnClick()
+assert(not popup.keysPage:IsShown(), "switching categories returns to its collection view")
+assert(popup.filterButton.text:GetText() == "Show: Any", "each collection needs an obvious group filter")
 assert(S.toyKeyButton and S.toyKeyButton.name == "WaffleHouseRandomToyKeyButton",
     "login should create a named secure toy key button")
+assert(S.mountKeyButton and S.mountKeyButton.name == "WaffleHouseRandomMountKeyButton",
+    "login should create a named secure mount key button")
+assert(S.shortcutButtons[customMount].name == "WaffleHouseRandomShortcut01"
+    and S.shortcutButtons[customToy].name == "WaffleHouseRandomShortcut02",
+    "custom shortcuts need stable named secure buttons")
 assert(loadfile("WaffleHouse_Slash.lua"))("WaffleHouse_EllesmereUI", addon)
 SlashCmdList.WAFFLEHOUSEOPTIONS("random summoner")
 assert(not popup:IsShown(), "/wh random summoner must toggle the popup")

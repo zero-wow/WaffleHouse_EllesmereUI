@@ -66,6 +66,20 @@ local function ResolveOutfitIndex(outfits, id, listedIndex, position, entryCount
     -- action until its live index resolves back to the intended stable ID.
     if Matches(listedIndex) then return listedIndex end
     if Matches(position) then return position end
+    -- The reverse index lookup can briefly return nothing while the outfit
+    -- list is rebuilding. GetOutfitInfo resolves the stable ID directly and
+    -- carries its current player-facing index, which is the value consumed by
+    -- Blizzard's secure outfit action.
+    if type(outfits.GetOutfitInfo) == "function" then
+        local ok, info = pcall(outfits.GetOutfitInfo, id)
+        if ok and IsPlain(info) and type(info) == "table"
+            and IsPlain(info.outfitID) and info.outfitID == id
+            and IsPlain(info.playerFacingOutfitIndex)
+            and type(info.playerFacingOutfitIndex) == "number"
+            and info.playerFacingOutfitIndex > 0 then
+            return info.playerFacingOutfitIndex
+        end
+    end
     -- An event outfit can shift the array position. Search Blizzard's
     -- player-facing slots before accepting any index for a saved outfit.
     for index = 1, entryCount do
