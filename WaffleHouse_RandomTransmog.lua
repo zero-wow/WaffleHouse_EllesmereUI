@@ -34,6 +34,19 @@ local function IntervalSeconds(settings)
     return minutes * 60
 end
 
+local function IsNamedSavedOutfit(name)
+    if not (IsPlain(name) and type(name) == "string") then return false end
+    local trimmed = name:match("^%s*(.-)%s*$")
+    if trimmed == "" then return false end
+    -- Purchased but never configured slots appear in Blizzard's outfit list
+    -- with the default name "Outfit" and a question-mark icon. They have a
+    -- valid ID/index, but applying them only reapplies the current appearance.
+    -- Their default label is localized on some clients.
+    if trimmed:lower() == "outfit" or trimmed == _G.OUTFIT
+        or trimmed == _G.TRANSMOG_OUTFIT then return false end
+    return true
+end
+
 -- The outfit C API is protected. Never call ChangeDisplayedOutfit from addon
 -- Lua (not even from OnClick or pcall). Only a hardware click on the secure
 -- outfit action below may make the change. Its index is prepared beforehand.
@@ -95,7 +108,7 @@ local function ChooseOutfit()
                 and IsPlain(disabled) and IsPlain(eventOutfit)
                 and type(id) == "number" and id > 0 and id ~= activeID
                 and type(index) == "number" and index > 0
-                and type(name) == "string" and name ~= ""
+                and IsNamedSavedOutfit(name)
                 and disabled ~= true and eventOutfit ~= true then
                 local locked = outfits.IsLockedOutfit(id)
                 if IsPlain(locked) and locked ~= true then
@@ -126,6 +139,17 @@ local function ChooseOutfit()
             if #remaining > 0 then usedOutfitIDs = {} end
         end
         if #remaining == 0 then
+            -- A failed secure click cannot be retried by addon code. Once its
+            -- confirmation window has expired, keep the sole real alternative
+            -- ready for the player's next hardware click instead of leaving
+            -- the wardrobe button permanently disarmed.
+            if #candidates == 1 and candidates[1].id == lastAttemptedID then
+                local waiting = false
+                for _, request in ipairs(pendingClicks) do
+                    if request.id == lastAttemptedID and not request.confirmed then waiting = true; break end
+                end
+                if not waiting then return candidates[1], nil, #candidates end
+            end
             return nil, "Waiting for the previous outfit change to finish; no different outfit is ready.", 0
         end
         -- Refreshing the UI must not silently reroll an outfit not yet clicked.
@@ -258,6 +282,8 @@ local function CreateButton()
             return
         end
         local requestedID, requestedIndex = self.queuedOutfitID, self.queuedOutfitIndex
+        -- Avoid hammering a failed selection while other named outfits exist.
+        -- The sole valid alternative may be retried after the timeout above.
         usedOutfitIDs[requestedID] = true
         lastAttemptedID = requestedID
         self.lastRequestedOutfitID = requestedID
@@ -419,7 +445,10 @@ events:SetScript("OnEvent", function(_, event)
             local ok, activeID = pcall(C_TransmogOutfitInfo.GetActiveOutfitID)
             button.lastConfirmedOutfitID = ok and IsPlain(activeID) and activeID or nil
             for _, request in ipairs(pendingClicks) do
-                if button.lastConfirmedOutfitID == request.id then request.confirmed = true end
+                if button.lastConfirmedOutfitID == request.id then
+                    request.confirmed = true
+                    usedOutfitIDs[request.id] = true
+                end
             end
             if button.manualProgress and button.lastConfirmedOutfitID == button.lastRequestedOutfitID then
                 button.manualConfirmed = true

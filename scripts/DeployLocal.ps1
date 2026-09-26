@@ -29,7 +29,7 @@ $localToc = $toc.Replace($publicMarker, $ownerMarker).Replace($publicTransmogMar
 
 # Only deploy completed source changes; preserve unrelated installed files.
 # Source TOC defaults remain off for public users.
-foreach ($name in @('WaffleHouse_EllesmereUI.lua', 'WaffleHouse_Adventure.lua', 'WaffleHouse_FlightIndicator.lua', 'WaffleHouse_RandomTransmog.lua', 'WaffleHouse_BagSlotFreeze.lua', 'WaffleHouse_Slash.lua')) {
+foreach ($name in @('WaffleHouse_EllesmereUI.lua', 'WaffleHouse_Adventure.lua', 'WaffleHouse_FlightIndicator.lua', 'WaffleHouse_RandomTransmog.lua', 'WaffleHouse_RandomSummoner.lua', 'WaffleHouse_VendorStack.lua', 'WaffleHouse_Toast.lua', 'WaffleHouse_ResourceWatch.lua', 'WaffleHouse_BagSlotFreeze.lua', 'WaffleHouse_Slash.lua', 'Bindings.xml')) {
     Copy-Item -LiteralPath (Join-Path $source $name) -Destination (Join-Path $installed $name) -Force
 }
 

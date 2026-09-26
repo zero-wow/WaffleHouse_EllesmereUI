@@ -16,7 +16,9 @@ WaffleHouse_VendorOptions.lua
 WaffleHouse_VendorStack.lua
 WaffleHouse_AutoMount.lua
 WaffleHouse_RandomTransmog.lua
+WaffleHouse_RandomSummoner.lua
 WaffleHouse_FlightIndicator.lua
+WaffleHouse_Toast.lua
 WaffleHouse_ResourceWatch.lua
 WaffleHouse_CVarProtector.lua
 WaffleHouse_Adventure.lua
@@ -36,3 +38,4 @@ WaffleHouse_VendorTracking.lua
 WaffleHouse_BuffCheck.lua
 WaffleHouse_BuffCheckUI.lua
 WaffleHouse_Slash.lua
+Bindings.xml

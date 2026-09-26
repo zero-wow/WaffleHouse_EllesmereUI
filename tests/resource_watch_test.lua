@@ -3,15 +3,13 @@ local settings = { resourceWatchEnabled = false, resourceWatchThreshold = "8" }
 local addon = { GetSettings = function() return settings end }
 local combat = false
 local readings = {}
-local popups = {}
+local toasts = {}
 local ticker
 local frame
 
-StaticPopupDialogs = {}
-CLOSE = "Close"
-StaticPopup_Show = function(key, message)
-    popups[#popups + 1] = { key = key, message = message }
-    return {}
+addon.ShowWarningToast = function(key, title, message, detail)
+    toasts[#toasts + 1] = { key = key, title = title, message = message, detail = detail }
+    return true
 end
 InCombatLockdown = function() return combat end
 Enum = { AddOnProfilerMetric = { RecentAverageTime = 1 } }
@@ -37,8 +35,6 @@ CreateFrame = function()
 end
 
 assert(loadfile(source))("WaffleHouse_EllesmereUI", addon)
-assert(StaticPopupDialogs.WAFFLEHOUSE_RESOURCE_WATCH,
-    "warning must have a dismissible popup")
 frame:OnEvent("PLAYER_LOGIN")
 assert(not ticker, "disabled watch must have no polling ticker")
 
@@ -51,12 +47,13 @@ assert(ticker == firstTicker, "refresh must not create duplicate tickers")
 
 readings = { { addOnName = "HeavyAddon", metricValue = 9 } }
 for _ = 1, 3 do ticker.callback() end
-assert(#popups == 0, "three high readings are not sustained enough")
+assert(#toasts == 0, "three high readings are not sustained enough")
 ticker.callback()
-assert(#popups == 1 and popups[1].message:find("HeavyAddon", 1, true),
-    "four high readings must name the responsible addon")
+assert(#toasts == 1 and toasts[1].message:find("HeavyAddon", 1, true)
+    and toasts[1].title == "RESOURCE WATCH" and toasts[1].detail:find("no addon disabled", 1, true),
+    "four high readings must produce a non-blocking warning toast")
 for _ = 1, 5 do ticker.callback() end
-assert(#popups == 1, "warn at most once per addon per session")
+assert(#toasts == 1, "warn at most once per addon per session")
 
 readings = { { addOnName = "AnotherAddon", metricValue = 9 } }
 ticker.callback()
@@ -64,25 +61,25 @@ readings[1].metricValue = 3
 ticker.callback()
 readings[1].metricValue = 9
 for _ = 1, 3 do ticker.callback() end
-assert(#popups == 1, "a below-threshold reading must reset the streak")
+assert(#toasts == 1, "a below-threshold reading must reset the streak")
 
 combat = true
 ticker.callback()
-assert(#popups == 1, "no popup may appear in combat")
+assert(#toasts == 1, "no warning may appear in combat")
 combat = false
 frame:OnEvent("PLAYER_REGEN_ENABLED")
-assert(#popups == 2 and popups[2].message:find("AnotherAddon", 1, true),
+assert(#toasts == 2 and toasts[2].message:find("AnotherAddon", 1, true),
     "sustained combat warning must appear after combat")
 
 settings.resourceWatchThreshold = "12"
 addon.ResetResourceWatchSamples()
 readings = { { addOnName = "ThresholdAddon", metricValue = 10 } }
 for _ = 1, 4 do ticker.callback() end
-assert(#popups == 2, "threshold setting must be honored")
+assert(#toasts == 2, "threshold setting must be honored")
 
 readings = { { addOnName = "WaffleHouse_EllesmereUI", metricValue = 13 } }
 for _ = 1, 4 do ticker.callback() end
-assert(#popups == 3, "the monitor must be willing to report its own addon")
+assert(#toasts == 3, "the monitor must be willing to report its own addon")
 
 settings.resourceWatchEnabled = false
 addon.RefreshResourceWatch()

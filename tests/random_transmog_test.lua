@@ -9,6 +9,10 @@ local entries = {
     { outfitID = 3, playerFacingOutfitIndex = 3, name = "Event", isDisabled = false, isEventOutfit = true },
     { outfitID = 4, playerFacingOutfitIndex = 4, name = "Disabled", isDisabled = true, isEventOutfit = false },
     { outfitID = 5, playerFacingOutfitIndex = 5, name = "Locked", isDisabled = false, isEventOutfit = false },
+    { outfitID = 6, playerFacingOutfitIndex = 6, name = "Outfit", icon = 134400,
+        isDisabled = false, isEventOutfit = false },
+    { outfitID = 7, playerFacingOutfitIndex = 7, name = "  Outfit  ", icon = 134400,
+        isDisabled = false, isEventOutfit = false },
 }
 
 GetTime = function() return now end
@@ -84,8 +88,9 @@ entries[2].playerFacingOutfitIndex = nil -- absent index may resolve to the live
 events:OnEvent("PLAYER_LOGIN")
 assert(button and button.visible and button.attributes.type == "outfit"
     and button.attributes["outfit-index"] == 2
+    and button.candidateCount == 1
     and button.attributes.action == "change" and button.attributes["shift-type1"] == "",
-    "must arm a non-toggling secure action for a different valid outfit")
+    "must arm only a named saved outfit, excluding purchased empty Outfit slots")
 assert(button.attributes.useOnKeyDown == false, "secure outfit click must explicitly use mouse-up")
 assert(button.back.path:find("button-back.png", 1, true)
     and button.front.path:find("button-front.png", 1, true)
@@ -158,6 +163,8 @@ assert(button.clickCount == 2, "click diagnostics must record physical button ca
 advance(3)
 assert(#messages > before and messages[#messages]:find("did not change", 1, true),
     "silent failed secure click must report its queued slot")
+assert(button.queuedOutfitID == 1,
+    "a failed click must re-arm the sole genuinely saved alternative")
 
 entries[6] = { outfitID = 6, playerFacingOutfitIndex = 6, name = "Sixth" }
 entries[7] = { outfitID = 7, playerFacingOutfitIndex = 7, name = "Seventh" }

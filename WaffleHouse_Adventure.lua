@@ -491,6 +491,29 @@ function addon.BuildAdventurePage(parent, yOffset)
         ); y = y - h
     end
 
+    _, h = W:SectionHeader(parent, "RANDOM SUMMONER", y); y = y - h
+    _, h = W:DualRow(parent, y,
+        {
+            type = "toggle",
+            text = "Show Random Summoner Button",
+            tooltip = "Show the small M/P/T launcher. Click it to choose mount, pet, and toy pools or set shortcut keys. Drag it to move. You can also open the popup with /whrandom.",
+            getValue = function()
+                return addon.RandomSummoner and addon.RandomSummoner.GetSettings().showLauncher == true
+            end,
+            setValue = function(value)
+                if addon.RandomSummoner then addon.RandomSummoner.SetLauncherShown(value) end
+            end,
+        },
+        {
+            type = "button",
+            text = "Open Pools & Keys",
+            tooltip = "Choose which collected mounts, pets, and toys are in each random pool, see the available counts, and assign shortcut keys.",
+            onClick = function()
+                if addon.RandomSummoner then addon.RandomSummoner.Toggle() end
+            end,
+        }
+    ); y = y - h
+
     _, h = W:SectionHeader(parent, "FLIGHT STYLE INDICATOR", y); y = y - h
     _, h = W:DualRow(parent, y,
         {

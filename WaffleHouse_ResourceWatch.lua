@@ -3,21 +3,11 @@ local _, addon = ...
 local SAMPLE_SECONDS = 5
 local REQUIRED_SAMPLES = 4
 local TOP_ADDONS = 8
-local POPUP_KEY = "WAFFLEHOUSE_RESOURCE_WATCH"
 
 local ticker
 local streaks = {}
 local warned = {}
 local pending
-
-StaticPopupDialogs[POPUP_KEY] = {
-    text = "%s",
-    button1 = CLOSE or "Dismiss",
-    timeout = 0,
-    whileDead = true,
-    hideOnEscape = true,
-    preferredIndex = 3,
-}
 
 local function GetSettings()
     return addon.GetSettings and addon.GetSettings()
@@ -40,10 +30,10 @@ local function ShowWarning(candidate)
     local settings = GetSettings()
     if not settings or settings.resourceWatchEnabled ~= true or InCombatLockdown() then return end
 
-    local message = string.format(
-        "RESOURCE WATCH\n\nHigh addon CPU is attributed to %s (%.1f ms per frame across %d checks).\n\nThis is a warning only; no addon was disabled. Shared libraries can affect attribution.",
+    local message = string.format("%s  ·  %.1f ms/frame for %d checks",
         candidate.name, candidate.value, REQUIRED_SAMPLES)
-    if StaticPopup_Show(POPUP_KEY, message) then
+    if addon.ShowWarningToast and addon.ShowWarningToast("resource:" .. candidate.name,
+        "RESOURCE WATCH", message, "Warning only · no addon disabled; shared libraries can affect attribution") then
         warned[candidate.name] = true
         pending = nil
     end
