@@ -38,19 +38,20 @@ end
 -- Lua (not even from OnClick or pcall). Only a hardware click on the secure
 -- outfit action below may make the change. Its index is prepared beforehand.
 local function ResolveOutfitIndex(outfits, id, listedIndex, position, entryCount)
-    -- GetOutfitsInfo already supplies the player-facing index. Avoid an extra
-    -- restricted API call for ordinary entries, which can fail from addon Lua.
-    if IsPlain(listedIndex) and type(listedIndex) == "number" and listedIndex > 0 then
-        return listedIndex
-    end
     local lookup = outfits.GetOutfitInfoByPlayerFacingIndex
-    if type(lookup) ~= "function" then return nil end
+    if type(lookup) ~= "function" then
+        return IsPlain(listedIndex) and type(listedIndex) == "number"
+            and listedIndex > 0 and listedIndex or nil
+    end
     local function Matches(index)
         if not (IsPlain(index) and type(index) == "number" and index > 0) then return false end
         local ok, info = pcall(lookup, index)
         return ok and IsPlain(info) and type(info) == "table"
             and IsPlain(info.outfitID) and info.outfitID == id
     end
+    -- An index can shift when outfits are added or removed. Never arm a secure
+    -- action until its live index resolves back to the intended stable ID.
+    if Matches(listedIndex) then return listedIndex end
     if Matches(position) then return position end
     -- An event outfit can shift the array position. Search Blizzard's
     -- player-facing slots before accepting any index for a saved outfit.
@@ -119,17 +120,13 @@ local function ChooseOutfit()
             end
         end
         if #remaining == 0 then
-            if #candidates == 1 then
-                -- Reusing the sole option is unavoidable, but keep its history
-                -- so newly added outfits still take priority later.
-                remaining = candidates
-            else
-                usedOutfitIDs = {}
-                for _, candidate in ipairs(candidates) do
-                    if candidate.id ~= lastAttemptedID then remaining[#remaining + 1] = candidate end
-                end
-                if #remaining == 0 then remaining = candidates end
+            for _, candidate in ipairs(candidates) do
+                if candidate.id ~= lastAttemptedID then remaining[#remaining + 1] = candidate end
             end
+            if #remaining > 0 then usedOutfitIDs = {} end
+        end
+        if #remaining == 0 then
+            return nil, "Waiting for the previous outfit change to finish; no different outfit is ready.", 0
         end
         -- Refreshing the UI must not silently reroll an outfit not yet clicked.
         if button and button.queuedOutfitID then

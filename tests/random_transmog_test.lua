@@ -101,9 +101,12 @@ assert(button.lastFrame == 63 and activeID == 1, "timer fills but never performs
 
 -- Simulate WoW's secure dispatch; addon Lua only receives the resulting event.
 assert(button.attributes["outfit-index"] == 2)
+button:PostClick("LeftButton")
+advance(0)
+assert(button.attributes.type == nil and button.queuedOutfitID == nil,
+    "a pending outfit change must not re-arm that same outfit while the active ID is stale")
 activeID = 2
 events:OnEvent("TRANSMOG_DISPLAYED_OUTFIT_CHANGED")
-button:PostClick("LeftButton")
 advance(0)
 assert(button.attributes["outfit-index"] == 1, "next secure click must select another outfit")
 for _ = 1, 20 do button:OnUpdate(0.1) end
@@ -122,6 +125,13 @@ button:OnMouseWheel(-1)
 assert(button.size == 160, "never resize a protected frame in combat")
 state.combat = false
 events:OnEvent("PLAYER_REGEN_ENABLED")
+
+entries[1].playerFacingOutfitIndex = 2
+events:OnEvent("TRANSMOG_OUTFITS_CHANGED")
+advance(0)
+assert(button.attributes["outfit-index"] == 1,
+    "a stale player-facing index must be checked against its stable outfit ID")
+entries[1].playerFacingOutfitIndex = 1
 
 state.lockedActive = true
 events:OnEvent("TRANSMOG_OUTFITS_CHANGED")
@@ -157,7 +167,7 @@ assert(button.queuedOutfitID == 6 and button.queuedOutfitIndex == 6,
     "use a different existing outfit with its player-facing index")
 button:PostClick("LeftButton")
 advance(0)
-assert(button.queuedOutfitID == 7, "the next click must use another saved outfit")
+assert(button.queuedOutfitID == 7, "the next click must use another saved outfit; got " .. tostring(button.queuedOutfitID))
 activeID = 6
 events:OnEvent("TRANSMOG_DISPLAYED_OUTFIT_CHANGED")
 advance(0)
@@ -169,6 +179,26 @@ local warningsBefore = #messages
 advance(3)
 assert(#messages == warningsBefore + 1 and messages[#messages]:find("queued slot 7", 1, true),
     "a confirmed earlier click must not be reported as failed after another click")
+
+entries[6], entries[7] = nil, nil
+activeID = 2
+events:OnEvent("TRANSMOG_OUTFITS_CHANGED")
+advance(0)
+assert(button.queuedOutfitID == 1, "the other saved outfit must remain selectable")
+button:PostClick("LeftButton")
+advance(0)
+assert(button.attributes.type == nil, "a second click before confirmation must not reset the queued outfit")
+activeID = 1
+events:OnEvent("TRANSMOG_DISPLAYED_OUTFIT_CHANGED")
+advance(0)
+assert(button.queuedOutfitID == 2, "a confirmed change must arm the alternate outfit")
+button:PostClick("LeftButton")
+advance(0)
+activeID = 2
+events:OnEvent("TRANSMOG_DISPLAYED_OUTFIT_CHANGED")
+advance(0)
+assert(button.queuedOutfitID == 1,
+    "two-outfit rotation must resume after history resets without reapplying the active outfit")
 
 settings.randomTransmogButtonEnabled = false
 addon.RefreshRandomTransmogButton()
