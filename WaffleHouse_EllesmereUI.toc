@@ -38,4 +38,4 @@ WaffleHouse_VendorTracking.lua
 WaffleHouse_BuffCheck.lua
 WaffleHouse_BuffCheckUI.lua
 WaffleHouse_Slash.lua
-Bindings.xml
+# Bindings.xml is auto-loaded by WoW; listing it here parses it as ordinary UI XML.
