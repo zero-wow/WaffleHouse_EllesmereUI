@@ -643,35 +643,44 @@ end
 
 local function EnsureLauncher()
     if launcher then return end
-    launcher = Button(UIParent, "", 35, 35, S.Toggle)
+    launcher = Button(UIParent, "", 120, 38, S.Toggle)
     launcher:SetFrameStrata("MEDIUM")
     launcher:SetClampedToScreen(true)
     launcher:SetMovable(true)
     local position = Settings().position
     launcher:SetPoint("CENTER", UIParent, "CENTER", position and position.x or 240, position and position.y or -150)
     launcher.text:Hide()
-    local tiles = {
-        { letter = "M", color = { 0.31, 0.69, 0.49 } },
-        { letter = "P", color = { 0.32, 0.64, 0.91 } },
-        { letter = "T", color = { 0.94, 0.60, 0.30 } },
-    }
-    for i, tile in ipairs(tiles) do
-        local tileX = 3 + (i - 1) * 10
-        local backing = launcher:CreateTexture(nil, "ARTWORK")
-        backing:SetColorTexture(tile.color[1], tile.color[2], tile.color[3], 0.92)
-        backing:SetPoint("TOPLEFT", tileX, -7)
-        backing:SetSize(9, 19)
-        local letter = Font(launcher, 10, { 0.03, 0.05, 0.06 })
-        letter:SetPoint("TOPLEFT", tileX, -10)
-        letter:SetSize(9, 14)
-        letter:SetJustifyH("CENTER")
-        letter:SetText(tile.letter)
+    launcher:SetBackdropBorderColor(GREEN[1], GREEN[2], GREEN[3], 0.55)
+
+    -- One high-contrast mark stays legible at normal UI scale; the labels
+    -- explain the action without asking players to decode category initials.
+    local dieBorder = launcher:CreateTexture(nil, "ARTWORK")
+    dieBorder:SetColorTexture(GREEN[1], GREEN[2], GREEN[3], 0.9)
+    dieBorder:SetPoint("TOPLEFT", 7, -6)
+    dieBorder:SetSize(26, 26)
+    local dieFace = launcher:CreateTexture(nil, "ARTWORK")
+    dieFace:SetColorTexture(0.045, 0.105, 0.10, 1)
+    dieFace:SetPoint("TOPLEFT", 8, -7)
+    dieFace:SetSize(24, 24)
+    for _, point in ipairs({ { 12, -11 }, { 25, -11 }, { 18.5, -17.5 }, { 12, -24 }, { 25, -24 } }) do
+        local pip = launcher:CreateTexture(nil, "OVERLAY")
+        pip:SetColorTexture(0.86, 1, 0.95, 1)
+        pip:SetPoint("CENTER", launcher, "TOPLEFT", point[1], point[2])
+        pip:SetSize(3, 3)
     end
+    local randomLabel = Font(launcher, 10, GREEN)
+    randomLabel:SetPoint("TOPLEFT", 40, -7)
+    randomLabel:SetSize(72, 11)
+    randomLabel:SetText("RANDOM")
+    local summonerLabel = Font(launcher, 10, { 0.94, 0.96, 0.95 })
+    summonerLabel:SetPoint("TOPLEFT", 40, -19)
+    summonerLabel:SetSize(72, 12)
+    summonerLabel:SetText("SUMMONER")
     launcher:SetScript("OnEnter", function(self)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText("Random Summoner")
-        GameTooltip:AddLine("M = mounts, P = pets, T = toys. Click to choose pools; drag to move.", 0.7, 0.75, 0.77, true)
+        GameTooltip:AddLine("Click to choose random mounts, pets, and toys. Drag to move.", 0.7, 0.75, 0.77, true)
         GameTooltip:Show()
     end)
     launcher:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
