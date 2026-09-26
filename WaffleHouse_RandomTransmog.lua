@@ -52,19 +52,23 @@ end
 -- outfit action below may make the change. Its index is prepared beforehand.
 local function ResolveOutfitIndex(outfits, id, listedIndex, position, entryCount)
     local lookup = outfits.GetOutfitInfoByPlayerFacingIndex
-    if type(lookup) ~= "function" then
-        return IsPlain(listedIndex) and type(listedIndex) == "number"
-            and listedIndex > 0 and listedIndex or nil
-    end
+    local listedValid = IsPlain(listedIndex) and type(listedIndex) == "number" and listedIndex > 0
+    if type(lookup) ~= "function" and listedValid then return listedIndex end
     local function Matches(index)
-        if not (IsPlain(index) and type(index) == "number" and index > 0) then return false end
+        if type(lookup) ~= "function" or not (IsPlain(index) and type(index) == "number" and index > 0) then return false end
         local ok, info = pcall(lookup, index)
         return ok and IsPlain(info) and type(info) == "table"
             and IsPlain(info.outfitID) and info.outfitID == id
     end
-    -- An index can shift when outfits are added or removed. Never arm a secure
-    -- action until its live index resolves back to the intended stable ID.
-    if Matches(listedIndex) then return listedIndex end
+    -- GetOutfitsInfo supplies the index used by the secure outfit action.
+    -- A nil/blocked reverse lookup is not evidence that the supplied index is
+    -- wrong; only an actual different outfit ID warrants searching elsewhere.
+    if listedValid then
+        local ok, info = pcall(lookup, listedIndex)
+        if not ok or not IsPlain(info) or type(info) ~= "table"
+            or not IsPlain(info.outfitID) then return listedIndex end
+        if info.outfitID == id then return listedIndex end
+    end
     if Matches(position) then return position end
     -- The reverse index lookup can briefly return nothing while the outfit
     -- list is rebuilding. GetOutfitInfo resolves the stable ID directly and
@@ -76,7 +80,8 @@ local function ResolveOutfitIndex(outfits, id, listedIndex, position, entryCount
             and IsPlain(info.outfitID) and info.outfitID == id
             and IsPlain(info.playerFacingOutfitIndex)
             and type(info.playerFacingOutfitIndex) == "number"
-            and info.playerFacingOutfitIndex > 0 then
+            and info.playerFacingOutfitIndex > 0
+            and (not listedValid or Matches(info.playerFacingOutfitIndex)) then
             return info.playerFacingOutfitIndex
         end
     end
@@ -91,22 +96,16 @@ end
 local function ChooseOutfit()
     local outfits = C_TransmogOutfitInfo
     if not (outfits and type(outfits.GetOutfitsInfo) == "function"
-        and type(outfits.GetActiveOutfitID) == "function"
-        and type(outfits.IsLockedOutfit) == "function") then return nil, "Outfit API is unavailable." end
+        and type(outfits.GetActiveOutfitID) == "function") then return nil, "Outfit API is unavailable." end
     if type(outfits.IsTransmogEnabled) == "function" and not outfits.IsTransmogEnabled() then
         return nil, "Transmog is disabled for this character."
     end
     local activeID = outfits.GetActiveOutfitID()
     if not IsPlain(activeID) then return nil, "Active outfit is unavailable." end
-    if type(activeID) == "number" and activeID > 0 then
-        local locked = outfits.IsLockedOutfit(activeID)
-        if not IsPlain(locked) then return nil, "Active outfit lock is unavailable." end
-        if locked == true then return nil, "Current outfit is locked; unlock it in Transmog to switch." end
-    end
     local entries = outfits.GetOutfitsInfo()
     if not IsPlain(entries) or type(entries) ~= "table" then return nil, "Saved outfit list is unavailable." end
     local candidates = {}
-    local total, noIndex, lockedCount, disabledCount = 0, 0, 0, 0
+    local total, noIndex, disabledCount = 0, 0, 0
     for position, entry in ipairs(entries) do
         if IsPlain(entry) and type(entry) == "table" then
             total = total + 1
@@ -124,12 +123,7 @@ local function ChooseOutfit()
                 and type(index) == "number" and index > 0
                 and IsNamedSavedOutfit(name)
                 and disabled ~= true and eventOutfit ~= true then
-                local locked = outfits.IsLockedOutfit(id)
-                if IsPlain(locked) and locked ~= true then
-                    candidates[#candidates + 1] = { id = id, index = index, name = name }
-                else
-                    lockedCount = lockedCount + 1
-                end
+                candidates[#candidates + 1] = { id = id, index = index, name = name }
             elseif IsPlain(id) and type(id) == "number" and id ~= activeID then
                 if not (IsPlain(index) and type(index) == "number" and index > 0) then
                     noIndex = noIndex + 1
@@ -176,8 +170,8 @@ local function ChooseOutfit()
         end
         return remaining[math.random(#remaining)], nil, #candidates
     end
-    return nil, ("No selectable saved outfit (listed %d, missing index %d, locked %d, unavailable %d).")
-        :format(total, noIndex, lockedCount, disabledCount), 0
+    return nil, ("No selectable saved outfit (listed %d, missing index %d, unavailable %d).")
+        :format(total, noIndex, disabledCount), 0
 end
 
 local function PrepareButton()

@@ -8,7 +8,7 @@ local entries = {
     { outfitID = 2, playerFacingOutfitIndex = 2, name = "Other", isDisabled = false, isEventOutfit = false },
     { outfitID = 3, playerFacingOutfitIndex = 3, name = "Event", isDisabled = false, isEventOutfit = true },
     { outfitID = 4, playerFacingOutfitIndex = 4, name = "Disabled", isDisabled = true, isEventOutfit = false },
-    { outfitID = 5, playerFacingOutfitIndex = 5, name = "Locked", isDisabled = false, isEventOutfit = false },
+    { outfitID = 5, playerFacingOutfitIndex = 5, name = "Locked", isDisabled = true, isEventOutfit = false },
     { outfitID = 6, playerFacingOutfitIndex = 6, name = "Outfit", icon = 134400,
         isDisabled = false, isEventOutfit = false },
     { outfitID = 7, playerFacingOutfitIndex = 7, name = "  Outfit  ", icon = 134400,
@@ -107,6 +107,11 @@ events:OnEvent("TRANSMOG_OUTFITS_CHANGED")
 advance(0)
 assert(button.attributes["outfit-index"] == 2,
     "stable outfit ID lookup must keep named outfits armed when reverse index lookup is temporarily empty")
+C_TransmogOutfitInfo.GetOutfitInfoByPlayerFacingIndex = function() error("restricted lookup") end
+events:OnEvent("TRANSMOG_OUTFITS_CHANGED")
+advance(0)
+assert(button.attributes["outfit-index"] == 2,
+    "the supplied index must stay armed when a restricted reverse lookup throws")
 C_TransmogOutfitInfo.GetOutfitInfoByPlayerFacingIndex = reverseLookup
 
 advance(150)
@@ -151,9 +156,10 @@ assert(button.attributes["outfit-index"] == 1,
 entries[1].playerFacingOutfitIndex = 1
 
 state.lockedActive = true
+C_TransmogOutfitInfo.IsLockedOutfit = function() error("explicit click must not depend on lock query") end
 events:OnEvent("TRANSMOG_OUTFITS_CHANGED")
 advance(0)
-assert(button.attributes.type == nil, "locked outfit must disarm the button")
+assert(button.attributes.type == "outfit", "an explicit click may change a locked active outfit")
 state.lockedActive = false
 events:OnEvent("TRANSMOG_OUTFITS_CHANGED")
 advance(0)
