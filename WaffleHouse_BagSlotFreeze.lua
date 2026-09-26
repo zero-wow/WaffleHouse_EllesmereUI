@@ -207,6 +207,15 @@ local function ApplyMarkerAnchor(texture, button)
     texture:SetSize(math.max(1, math.floor(size * FROZEN_MARKER_WIDTH_RATIO + 0.5)), size)
 end
 
+local function ApplyFreezeHotspotAnchor(catcher, button)
+    local settings = GetSettings()
+    local point = settings.bagSlotFreezeMarkerPosition or "TOPRIGHT"
+    catcher:ClearAllPoints()
+    catcher:SetPoint(point, button, point, settings.bagSlotFreezeMarkerX or 0, settings.bagSlotFreezeMarkerY or 0)
+    local size = math.max(14, GetMarkerSize())
+    catcher:SetSize(size, size)
+end
+
 local function SetEdgeState(entry, state)
     local alpha = state == "frozen" and 0.95 or (state == "preview" and 0.48 or 0)
     for _, edge in ipairs(entry.edges) do edge:SetAlpha(alpha) end
@@ -230,12 +239,11 @@ local function GetOrCreateVisual(button)
     entry.marker = marker
 
     local catcher = CreateFrame("Button", nil, button)
-    catcher:SetAllPoints(button)
+    -- Never cover the whole secure item button: even a nominal left-click
+    -- pass-through can prevent Blizzard's Ctrl+click dress-up preview.
+    ApplyFreezeHotspotAnchor(catcher, button)
     catcher:SetFrameLevel(button:GetFrameLevel() + 12)
     catcher:RegisterForClicks("RightButtonUp")
-    -- The full-slot overlay must not swallow Ctrl+left-click item preview.
-    -- Configure pass-through when this child is created out of combat.
-    catcher:SetPassThroughButtons("LeftButton", "MiddleButton")
     catcher:Hide()
     entry.catcher = catcher
 
@@ -304,9 +312,14 @@ RefreshVisuals = function()
             local holdKey = eligible and IsFreezeModifierDown()
             ApplyMarkerAnchor(entry.marker, button)
             ApplyMarkerAnchor(entry.preview, button)
+            -- Its parent is a secure item button; never reposition this child
+            -- while combat lockdown is active.
+            if not (InCombatLockdown and InCombatLockdown()) then
+                ApplyFreezeHotspotAnchor(entry.catcher, button)
+            end
             entry.marker:SetShown(frozen == true)
             entry.catcher:SetShown(holdKey == true)
-            local preview = holdKey and not frozen and entry.catcher:IsMouseOver()
+            local preview = holdKey and not frozen and (button:IsMouseOver() or entry.catcher:IsMouseOver())
             entry.preview:SetShown(preview == true)
             SetEdgeState(entry, frozen and "frozen" or (preview and "preview" or nil))
         end
@@ -677,7 +690,7 @@ function addon.BuildBagsPage(parent, yOffset)
         {
             type = "toggle",
             text = "Freeze Bag Slots",
-            tooltip = "Hold the selected modifier and right-click an item in OneBag's Main Bags section to freeze or unfreeze it. Left-click remains available for item preview. Frozen items stay in their physical bag slots when using Sort Items.",
+            tooltip = "Hold the selected modifier and right-click the small lock marker on an item in OneBag's Main Bags section to freeze or unfreeze it. Ctrl+left-click on the item remains available for Blizzard's preview. Frozen items stay in their physical bag slots when using Sort Items.",
             getValue = function() return GetSettings().bagSlotFreezeEnabled ~= false end,
             setValue = function(value) GetSettings().bagSlotFreezeEnabled = value and true or false; Refresh() end,
         },
@@ -686,7 +699,7 @@ function addon.BuildBagsPage(parent, yOffset)
             text = "Freeze Modifier",
             values = { ctrl = "Ctrl", shift = "Shift", alt = "Alt", disabled = "Disabled" },
             order = { "ctrl", "shift", "alt", "disabled" },
-            tooltip = "Hold this key while hovering a Main Bags item to reveal the frosted-lock preview and enable right-click-to-freeze. Disabled turns the feature off without removing saved freezes.",
+            tooltip = "Hold this key while hovering a Main Bags item to reveal its lock marker, then right-click that marker to freeze. Disabled turns the feature off without removing saved freezes.",
             getValue = function() return GetSettings().bagSlotFreezeModifier end,
             setValue = function(value) GetSettings().bagSlotFreezeModifier = value; Refresh() end,
         }
@@ -731,7 +744,7 @@ function addon.BuildBagsPage(parent, yOffset)
             type = "labeledButton",
             text = "Frozen Slots",
             buttonText = frozenSlotManagerOpen and "Hide Frozen Items" or "View Frozen Items",
-            tooltip = "Hold the selected modifier over Main Bags and left-click an item to toggle its frozen slot. Click again to close the inline manager without saving; Save applies its changes and Cancel discards them.",
+            tooltip = "Review and manage frozen Main Bags items here. Click again to close the inline manager without saving; Save applies its changes and Cancel discards them.",
             onClick = function()
                 if frozenSlotManagerOpen then
                     frozenSlotManagerDraft = nil

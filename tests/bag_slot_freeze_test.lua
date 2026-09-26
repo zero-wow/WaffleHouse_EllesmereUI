@@ -173,11 +173,16 @@ for _, fragment in ipairs({
     'W:DropdownWithOffsets',
     'IsMainBagsButton(button)',
     'catcher:RegisterForClicks("RightButtonUp")',
-    'catcher:SetPassThroughButtons("LeftButton", "MiddleButton")',
+    'ApplyFreezeHotspotAnchor(catcher, button)',
+    'ApplyFreezeHotspotAnchor(entry.catcher, button)',
+    'local size = math.max(14, GetMarkerSize())',
+    'local preview = holdKey and not frozen and (button:IsMouseOver() or entry.catcher:IsMouseOver())',
     'mouseButton ~= "RightButton" or not IsFreezeModifierDown()',
-    'and right-click an item in OneBag',
+    'and right-click the small lock marker',
 }) do
     assert(source:find(fragment, 1, true), "missing frozen-slot feature fragment: " .. fragment)
 end
+assert(not source:find('catcher:SetAllPoints(button)', 1, true),
+    "the freeze click target must not cover Blizzard's item-preview button")
 
 io.write("bag slot freeze tests passed\n")
