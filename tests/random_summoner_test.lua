@@ -153,6 +153,25 @@ S.SetRating("mount", 4, 2)
 assert(S.SetGroup("mount", 1, "Auction House"))
 assert(S.GetGroup("mount", { id = 1, group = "Travel" }) == "Auction House",
     "manual groups must override detection")
+assert(S.GetTravelTag(mounts[4].id, mounts[4], "Ground"), "mount travel defaults should be visible")
+S.ToggleTravelTag(mounts[4].id, mounts[4], "Ground")
+assert(not S.MatchesGroup("mount", mounts[4], "Ground"), "travel icons must change shortcut filtering")
+S.ToggleTravelTag(mounts[4].id, mounts[4], "Ground")
+local poolIndex = S.CreatePool("mount", "  Workshop  ")
+assert(poolIndex == 1 and m.customPools[1].name == "Workshop", "named custom pools must be creatable")
+assert(S.SetPoolMember("mount", poolIndex, 1, true), "a collected item can join a custom pool")
+m.packs.picked = false
+assert(S.Pick("mount", mounts).id == 1, "enabled custom pool members must enter the rated draw")
+local poolShortcut = S.CreateShortcut("mount")
+S.GetSettings().shortcuts[poolShortcut].filter = "pool:1"
+assert(S.ActivateShortcut(poolShortcut, secureMount) and secureMount.attributes.spell == "Mount Spell 101",
+    "custom pool shortcuts must select only their members")
+assert(S.DeletePool("mount", poolIndex) and S.GetSettings().shortcuts[poolShortcut].filter == nil,
+    "deleting a pool must repair shortcuts that referenced it")
+m.packs.picked = true
+p.launcherMode = "favorites"
+assert(S.Pick("pet", pets).id == 12, "favorites mode must draw only actual Blizzard favorites")
+p.launcherMode = "rated"
 local customMount = S.CreateShortcut("mount")
 S.GetSettings().shortcuts[customMount].filter = "Auction House"
 assert(S.ActivateShortcut(customMount, secureMount) and secureMount.attributes.spell == "Mount Spell 101",
@@ -172,15 +191,34 @@ assert(popup.keysPage:IsShown(), "shortcut configuration must open inside the cu
 popup.tabs.pet.scripts.OnClick()
 assert(not popup.keysPage:IsShown(), "switching categories returns to its collection view")
 assert(popup.filterButton.text:GetText() == "Show: Any", "each collection needs an obvious group filter")
+local launcher = namedFrames.WaffleHouseRandomLauncher
+assert(launcher and launcher.categoryButtons.mount and launcher.categoryButtons.pet
+    and launcher.categoryButtons.toy, "launcher needs separate Mount, Pet, and Toy icon buttons")
+launcher.categoryButtons.pet.scripts.OnClick(nil, "RightButton")
+assert(p.launcherMode == "favorites", "right-click icon must switch to Favorites mode")
+launcher.categoryButtons.pet.scripts.OnClick(nil, "RightButton")
+assert(p.launcherMode == "rated", "right-click icon must switch back to Rated mode")
+popup.listRows[1].ratingButtons[4].scripts.OnClick()
+assert(S.GetRating("pet", 11) == 4, "rating buttons must set a value directly")
+popup.poolName:SetText("Test Pool")
+popup.poolAdd.scripts.OnClick()
+assert(popup.poolSelect.text:GetText() == "Test Pool", "creating a pool should select it")
+popup.listRows[1].scripts.OnClick(popup.listRows[1])
+assert(p.customPools[1].members[11], "collection click should add to the selected custom pool")
+popup.poolDelete.scripts.OnClick()
+assert(#p.customPools == 0, "custom pool delete should remove the selected pool")
 assert(S.toyKeyButton and S.toyKeyButton.name == "WaffleHouseRandomToyKeyButton",
     "login should create a named secure toy key button")
 assert(S.mountKeyButton and S.mountKeyButton.name == "WaffleHouseRandomMountKeyButton",
     "login should create a named secure mount key button")
-assert(S.shortcutButtons[customMount].name == "WaffleHouseRandomShortcut01"
-    and S.shortcutButtons[customToy].name == "WaffleHouseRandomShortcut02",
+assert(S.shortcutButtons[customMount].name == ("WaffleHouseRandomShortcut%02d"):format(customMount)
+    and S.shortcutButtons[customToy].name == ("WaffleHouseRandomShortcut%02d"):format(customToy),
     "custom shortcuts need stable named secure buttons")
 assert(loadfile("WaffleHouse_Slash.lua"))("WaffleHouse_EllesmereUI", addon)
 SlashCmdList.WAFFLEHOUSEOPTIONS("random summoner")
 assert(not popup:IsShown(), "/wh random summoner must toggle the popup")
+S.Toggle("mount", "collection")
+popup.close.scripts.OnClick()
+assert(not popup:IsShown(), "close button must hide the popup")
 
 print("random_summoner_test: ok")

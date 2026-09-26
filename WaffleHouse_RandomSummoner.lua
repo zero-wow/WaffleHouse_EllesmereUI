@@ -8,14 +8,18 @@ addon.RandomSummoner = S
 
 local CATEGORIES = { "mount", "pet", "toy" }
 local LABELS = { mount = "Mounts", pet = "Pets", toy = "Toys" }
+local ART = "Interface\\AddOns\\WaffleHouse_EllesmereUI\\Media\\RandomSummoner\\"
+local CATEGORY_ART = { mount = ART .. "mount.tga", pet = ART .. "pet.tga", toy = ART .. "toy.tga" }
+local TRAVEL_ART = { Ground = ART .. "ground.tga", Sky = ART .. "sky.tga", Aquatic = ART .. "aquatic.tga" }
+local TRAVEL_TAGS = { "Ground", "Sky", "Aquatic" }
 local GROUPS = {
-    mount = { "Any", "Auction House", "Vendor", "Repair", "Travel" },
+    mount = { "Any", "Ground", "Sky", "Aquatic", "Auction House", "Vendor", "Repair", "Travel" },
     pet = { "Any", "Cooking", "Blacksmith", "Vendor", "Mailbox", "Bank", "Repair", "Portal", "Transport", "Other Utility", "Companion" },
     toy = { "Any", "Portal", "Morph", "Flag", "Crafting", "Music", "Visual", "Play", "Other" },
 }
 local PACKS = {
     mount = {
-        { key = "all", label = "All collected" },
+        { key = "all", label = "All Collected" },
         { key = "favorite", label = "Favorites" },
         { key = "store", label = "Store Mounts" },
         { key = "longsub", label = "Long Subscriptions (3/6/12)" },
@@ -23,14 +27,14 @@ local PACKS = {
         { key = "picked", label = "My Picks" },
     },
     pet = {
-        { key = "all", label = "All collected" },
+        { key = "all", label = "All Collected" },
         { key = "favorite", label = "Favorites" },
         { key = "store", label = "Store Pets" },
         { key = "darkmoon", label = "Darkmoon Faire" },
         { key = "picked", label = "My Picks" },
     },
     toy = {
-        { key = "all", label = "All collected" },
+        { key = "all", label = "All Collected" },
         { key = "favorite", label = "Favorites" },
         { key = "picked", label = "My Picks" },
     },
@@ -51,6 +55,9 @@ local function Settings()
         if type(pool.picks) ~= "table" then pool.picks = {} end
         if type(pool.ratings) ~= "table" then pool.ratings = {} end
         if type(pool.groups) ~= "table" then pool.groups = {} end
+        if type(pool.travelTags) ~= "table" then pool.travelTags = {} end
+        if type(pool.customPools) ~= "table" then pool.customPools = {} end
+        if pool.launcherMode ~= "favorites" then pool.launcherMode = "rated" end
     end
     if type(settings.shortcuts) ~= "table" then settings.shortcuts = {} end
     if settings.showLauncher == nil then settings.showLauncher = true end
@@ -104,6 +111,19 @@ local function DetectGroup(category, name, description)
     return "Other"
 end
 S.DetectGroup = DetectGroup
+
+local function DetectTravelTags(name, description)
+    local text = SafeText(name) .. " " .. SafeText(description)
+    local aquatic = text:find("aquatic", 1, true) or text:find("seahorse", 1, true)
+        or text:find("manta", 1, true) or text:find("jellyfish", 1, true)
+        or text:find("water strider", 1, true) or text:find("underwater", 1, true)
+    local sky = text:find("wing", 1, true) or text:find("dragon", 1, true)
+        or text:find("drake", 1, true) or text:find("gryphon", 1, true)
+        or text:find("griff", 1, true) or text:find("phoenix", 1, true)
+        or text:find("stormrider", 1, true)
+    return { Ground = not aquatic, Sky = not not sky, Aquatic = not not aquatic }
+end
+S.DetectTravelTags = DetectTravelTags
 
 local tooltipCache = {}
 local function ItemTooltipText(id)
@@ -171,7 +191,8 @@ local function Mounts()
                 if storeSource ~= nil and sourceType == storeSource then packs.store = true end
                 rows[#rows + 1] = { id = id, spellID = spellID, name = name, icon = icon, usable = usable and not hidden,
                     packs = packs, favorite = favorite == true,
-                    group = DetectGroup("mount", name, description) }
+                    group = DetectGroup("mount", name, description),
+                    travel = DetectTravelTags(name, description) }
             end
         end
     end
@@ -209,6 +230,12 @@ local function Pets()
                     row = { id = id, guid = guid, name = info.name or info.customName or ("Pet " .. id),
                         icon = info.icon, favorite = info.isFavorite == true, packs = packs, usable = true,
                         group = DetectGroup("pet", info.name or info.customName, description) }
+                    if C_PetJournal.GetPetStats then
+                        local rarity = select(5, C_PetJournal.GetPetStats(guid))
+                        if not IsSecret(rarity) and type(rarity) == "number" then
+                            row.quality = math.max(0, rarity - 1)
+                        end
+                    end
                     bySpecies[id] = row
                     rows[#rows + 1] = row
                 else
@@ -237,11 +264,12 @@ local function Toys()
     for i = 1, count do
         local id = C_ToyBox.GetToyFromIndex(i)
         if type(id) == "number" and not IsSecret(id) and PlayerHasToy and PlayerHasToy(id) then
-            local _, name, icon, favorite = C_ToyBox.GetToyInfo(id)
+            local _, name, icon, favorite, _, quality = C_ToyBox.GetToyInfo(id)
             if name and not IsSecret(name) then
                 rows[#rows + 1] = { id = id, name = name, icon = icon, favorite = favorite == true,
                     usable = not C_ToyBox.IsToyUsable or C_ToyBox.IsToyUsable(id), packs = {},
-                    group = DetectGroup("toy", name, ItemTooltipText(id)) }
+                    group = DetectGroup("toy", name, ItemTooltipText(id)),
+                    quality = not IsSecret(quality) and type(quality) == "number" and quality or nil }
             end
         end
     end
@@ -263,7 +291,55 @@ function S.IsSelected(category, row, settings)
     local packs = pool.packs or {}
     if packs.all or (packs.favorite and row.favorite) or (packs.picked and pool.picks[row.id]) then return true end
     for key in pairs(row.packs or {}) do if packs[key] then return true end end
+    for _, custom in ipairs(pool.customPools or {}) do
+        if custom.enabled and type(custom.members) == "table" and custom.members[row.id] then return true end
+    end
     return false
+end
+
+function S.CreatePool(category, name)
+    if category ~= "mount" and category ~= "pet" and category ~= "toy" then return end
+    name = type(name) == "string" and name:gsub("^%s+", ""):gsub("%s+$", "") or ""
+    if name == "" then return end
+    local pools = Settings()[category].customPools
+    if #pools >= 12 then return end
+    pools[#pools + 1] = { name = name:sub(1, 26), enabled = true, members = {} }
+    return #pools
+end
+
+function S.SetPoolMember(category, index, id, selected)
+    local pool = Settings()[category].customPools[index]
+    if not pool or type(id) ~= "number" then return false end
+    pool.members[id] = selected and true or nil
+    return true
+end
+
+function S.DeletePool(category, index)
+    local pools = Settings()[category].customPools
+    if not pools[index] then return false end
+    table.remove(pools, index)
+    for _, shortcut in pairs(Settings().shortcuts) do
+        if shortcut.category == category and type(shortcut.filter) == "string" then
+            local old = tonumber(shortcut.filter:match("^pool:(%d+)$"))
+            if old == index then shortcut.filter = nil
+            elseif old and old > index then shortcut.filter = "pool:" .. (old - 1) end
+        end
+    end
+    return true
+end
+
+function S.GetTravelTag(id, row, tag)
+    if not (row and row.travel and row.travel[tag] ~= nil) then return false end
+    local overrides = Settings().mount.travelTags[id]
+    if type(overrides) == "table" and overrides[tag] ~= nil then return overrides[tag] end
+    return row.travel[tag] == true
+end
+
+function S.ToggleTravelTag(id, row, tag)
+    if not S.GetTravelTag(id, row, tag) and not (row and row.travel and row.travel[tag] ~= nil) then return end
+    local tags = Settings().mount.travelTags
+    if type(tags[id]) ~= "table" then tags[id] = {} end
+    tags[id][tag] = not S.GetTravelTag(id, row, tag)
 end
 
 function S.GetRating(category, id)
@@ -291,6 +367,14 @@ end
 
 S.Groups = GROUPS
 
+function S.MatchesGroup(category, row, group)
+    if group == "Any" then return true end
+    if category == "mount" and (group == "Ground" or group == "Sky" or group == "Aquatic") then
+        return S.GetTravelTag(row.id, row, group)
+    end
+    return S.GetGroup(category, row) == group
+end
+
 function S.Counts(category, rows)
     local counts = { picked = 0, favorite = 0, all = #rows, selected = 0, usable = 0 }
     local settings = Settings()[category]
@@ -312,12 +396,17 @@ function S.Pick(category, rows, filter)
     local totalWeight = 0
     for _, row in ipairs(rows or S.Collect(category)) do
         local rating = S.GetRating(category, row.id)
-        local matches = not filter or filter == "Any" or S.GetGroup(category, row) == filter
+        local pool = Settings()[category]
+        local effectiveFilter = filter or (pool.launcherMode == "favorites" and "favorite" or nil)
+        local matches = not effectiveFilter or effectiveFilter == "Any" or S.MatchesGroup(category, row, effectiveFilter)
             or filter == ("item:" .. tostring(row.id))
-            or (filter == "favorite" and row.favorite)
-            or (filter == "picked" and Settings()[category].picks[row.id])
-            or (row.packs and row.packs[filter])
-        if row.usable and rating > 0 and matches and (filter or S.IsSelected(category, row)) then
+            or (effectiveFilter == "favorite" and row.favorite)
+            or (effectiveFilter == "picked" and pool.picks[row.id])
+            or (type(effectiveFilter) == "string" and effectiveFilter:sub(1, 5) == "pool:"
+                and pool.customPools[tonumber(effectiveFilter:sub(6))]
+                and pool.customPools[tonumber(effectiveFilter:sub(6))].members[row.id])
+            or (row.packs and row.packs[effectiveFilter])
+        if row.usable and rating > 0 and matches and (effectiveFilter or S.IsSelected(category, row)) then
             local weight = ({ 0, 1, 3, 7, 15 })[rating + 1]
             totalWeight = totalWeight + weight
             eligible[#eligible + 1] = { row = row, weight = weight }
@@ -392,8 +481,12 @@ end
 
 local WIDTH, HEIGHT, GUTTER = 600, 660, 18
 local GREEN = { 0.05, 0.82, 0.62 }
+local QUALITY = { [0] = { 0.62, 0.64, 0.65 }, [1] = { 0.91, 0.94, 0.94 },
+    [2] = { 0.12, 0.95, 0.22 }, [3] = { 0.12, 0.57, 1 },
+    [4] = { 0.71, 0.29, 0.96 }, [5] = { 1, 0.49, 0 }, [6] = { 0.9, 0.7, 0.35 } }
 local panel, launcher, selectedCategory, currentRows, currentCounts, page, search
 local Refresh, RefreshLauncher
+local activePool = { mount = 0, pet = 0, toy = 0 }
 local rowsPerPage = 7
 local bindCapture, bindCaptureSlot, replaceKey
 local viewMode, shortcutPage = "collection", 1
@@ -405,12 +498,15 @@ local bindingCommands = {
 }
 
 local function FilterOptions(category)
-    local options = { { value = nil, label = "My pool" }, { value = "Any", label = "All collected" } }
+    local options = { { value = nil, label = "My Pool" }, { value = "Any", label = "All Collected" } }
     for _, group in ipairs(GROUPS[category]) do
         if group ~= "Any" then options[#options + 1] = { value = group, label = group } end
     end
     for _, pack in ipairs(PACKS[category]) do
         if pack.key ~= "all" then options[#options + 1] = { value = pack.key, label = pack.label } end
+    end
+    for index, pool in ipairs(Settings()[category].customPools) do
+        options[#options + 1] = { value = "pool:" .. index, label = pool.name }
     end
     return options
 end
@@ -422,7 +518,7 @@ local function FilterLabel(category, value, shortcut)
     for _, option in ipairs(FilterOptions(category)) do
         if option.value == value then return option.label end
     end
-    return "My pool"
+    return "My Pool"
 end
 
 function S.CreateShortcut(category)
@@ -552,6 +648,23 @@ local function Surface(frame, r, g, b)
     frame:SetBackdropBorderColor(1, 1, 1, 0.18)
 end
 
+-- Two-pixel corner cutouts on every corner; no large card-like radius.
+local function SoftPanel(frame, width, height)
+    frame:SetBackdrop(nil)
+    local function Rect(layer, x, y, w, h, r, g, b, a)
+        local texture = frame:CreateTexture(nil, layer)
+        texture:SetColorTexture(r, g, b, a)
+        texture:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -y)
+        texture:SetSize(w, h)
+    end
+    Rect("BACKGROUND", 2, 0, width - 4, height, 0.055, 0.061, 0.068, 0.99)
+    Rect("BACKGROUND", 0, 2, width, height - 4, 0.055, 0.061, 0.068, 0.99)
+    Rect("BORDER", 2, 0, width - 4, 1, 0.3, 0.34, 0.36, 0.7)
+    Rect("BORDER", 2, height - 1, width - 4, 1, 0.3, 0.34, 0.36, 0.7)
+    Rect("BORDER", 0, 2, 1, height - 4, 0.3, 0.34, 0.36, 0.7)
+    Rect("BORDER", width - 1, 2, 1, height - 4, 0.3, 0.34, 0.36, 0.7)
+end
+
 local function Button(parent, label, w, h, click)
     local button = CreateFrame("Button", nil, parent, "BackdropTemplate")
     button:SetSize(w, h)
@@ -563,7 +676,60 @@ local function Button(parent, label, w, h, click)
     button.text:SetText(label)
     button:SetHighlightTexture("Interface\\Buttons\\WHITE8X8")
     button:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.08)
+    button:SetPushedTexture("Interface\\Buttons\\WHITE8X8")
+    local pushed = button:GetPushedTexture()
+    if pushed then pushed:SetVertexColor(0.05, 0.82, 0.62, 0.16) end
     button:SetScript("OnClick", click)
+    return button
+end
+
+local function ArtButton(parent, texture, size, click)
+    local button = Button(parent, "", size, size, click)
+    button.text:Hide()
+    button.icon = button:CreateTexture(nil, "ARTWORK")
+    button.icon:SetTexture(texture)
+    button.icon:SetPoint("CENTER")
+    button.icon:SetSize(size - 3, size - 3)
+    button:SetScript("OnMouseDown", function(self)
+        self.icon:ClearAllPoints(); self.icon:SetPoint("CENTER", 1, -1)
+    end)
+    button:SetScript("OnMouseUp", function(self)
+        self.icon:ClearAllPoints(); self.icon:SetPoint("CENTER", 0, 0)
+    end)
+    return button
+end
+
+local function ActionVisual(button, category)
+    button:SetSize(126, 27)
+    button:SetBackdropBorderColor(GREEN[1], GREEN[2], GREEN[3], 0.52)
+    button.icon = button:CreateTexture(nil, "ARTWORK")
+    button.icon:SetTexture(CATEGORY_ART[category])
+    button.icon:SetPoint("LEFT", 4, 0)
+    button.icon:SetSize(23, 23)
+    button.text:ClearAllPoints()
+    button.text:SetPoint("LEFT", 29, 0)
+    button.text:SetPoint("RIGHT", -5, 0)
+    button.text:SetJustifyH("CENTER")
+    button:SetHighlightTexture("Interface\\Buttons\\WHITE8X8")
+    button:GetHighlightTexture():SetVertexColor(1, 1, 1, 0.08)
+    button:SetPushedTexture("Interface\\Buttons\\WHITE8X8")
+    local pushed = button:GetPushedTexture()
+    if pushed then pushed:SetVertexColor(GREEN[1], GREEN[2], GREEN[3], 0.18) end
+end
+
+local function ChevronButton(parent, direction, click)
+    local button = Button(parent, "", 26, 24, click)
+    button.text:Hide()
+    local angle = math.pi / 4
+    for index = 1, 2 do
+        local arm = button:CreateTexture(nil, "ARTWORK")
+        arm:SetColorTexture(GREEN[1], GREEN[2], GREEN[3], 0.95)
+        arm:SetSize(10, 2)
+        arm:SetPoint("CENTER", button, "CENTER", 0, index == 1 and 3 or -3)
+        local rotation = direction == "right" and (index == 1 and -angle or angle)
+            or (index == 1 and angle or -angle)
+        arm:SetRotation(rotation)
+    end
     return button
 end
 
@@ -658,7 +824,7 @@ local function EnsurePanel()
             .. (IsShiftKeyDown and IsShiftKeyDown() and "SHIFT-" or "")
         SetKey(prefix .. key)
     end)
-    Surface(panel)
+    SoftPanel(panel, WIDTH, HEIGHT)
     panel:SetScript("OnHide", EndCapture)
 
     local title = Font(panel, 17, GREEN)
@@ -669,7 +835,7 @@ local function EnsurePanel()
     subtitle:SetText("Choose a pool, rate what you love, and set shortcuts for each collection.")
     local drag = CreateFrame("Frame", nil, panel)
     drag:SetPoint("TOPLEFT", 0, 0)
-    drag:SetPoint("TOPRIGHT", 0, 0)
+    drag:SetWidth(WIDTH - 70)
     drag:SetHeight(48)
     drag:EnableMouse(true)
     drag:RegisterForDrag("LeftButton")
@@ -677,6 +843,8 @@ local function EnsurePanel()
     drag:SetScript("OnDragStop", function() panel:StopMovingOrSizing() end)
     local close = Button(panel, "x", 27, 25, function() panel:Hide() end)
     close:SetPoint("TOPRIGHT", -GUTTER, -14)
+    close:SetFrameLevel((drag:GetFrameLevel() or 0) + 1)
+    panel.close = close
 
     panel.tabs = {}
     for i, category in ipairs(CATEGORIES) do
@@ -693,16 +861,51 @@ local function EnsurePanel()
     panel.summary = Font(panel, 11, GREEN)
     panel.summary:SetPoint("TOPLEFT", GUTTER, -106)
     panel.summary:SetWidth(WIDTH - GUTTER * 2 - 145)
-    panel.shortcutToggle = Button(panel, "Shortcuts and keys", 139, 26, function()
+    panel.shortcutToggle = Button(panel, "Shortcuts & Keys", 139, 26, function()
         viewMode = "shortcuts"
         shortcutPage = 1
         panel.filterMenu:Hide()
         Refresh()
     end)
     panel.shortcutToggle:SetPoint("TOPRIGHT", -GUTTER, -101)
-    local help = Font(panel, 10, { 0.66, 0.7, 0.72 })
-    help:SetPoint("TOPLEFT", GUTTER, -130)
-    help:SetText("Pool groups combine. Rating 0 turns an item off; 4 makes it much more likely.")
+    panel.poolSelect = Button(panel, "My Picks", 145, 25, function(self)
+        panel.OpenFilterMenu(self, "pool")
+    end)
+    panel.poolSelect:SetPoint("TOPLEFT", GUTTER, -125)
+    panel.poolName = EditBox(panel, 192, 25)
+    panel.poolName:SetPoint("TOPLEFT", GUTTER + 153, -125)
+    panel.poolName:SetText("")
+    panel.poolPlaceholder = Font(panel.poolName, 10, { 0.46, 0.55, 0.57 })
+    panel.poolPlaceholder:SetPoint("LEFT", 8, 0)
+    panel.poolPlaceholder:SetText("New Pool Name")
+    panel.poolName:SetScript("OnTextChanged", function(self)
+        panel.poolPlaceholder:SetShown(self:GetText() == "")
+    end)
+    panel.poolName:SetScript("OnEnterPressed", function(self)
+        local index = S.CreatePool(selectedCategory, self:GetText())
+        if index then activePool[selectedCategory] = index; self:SetText("") end
+        self:ClearFocus(); Refresh()
+    end)
+    panel.poolAdd = Button(panel, "Create", 80, 25, function()
+        local index = S.CreatePool(selectedCategory, panel.poolName:GetText())
+        if index then activePool[selectedCategory] = index; panel.poolName:SetText("") end
+        panel.poolName:ClearFocus(); Refresh()
+    end)
+    panel.poolAdd:SetPoint("TOPLEFT", GUTTER + 353, -125)
+    panel.poolEnabled = Button(panel, "Active", 65, 25, function()
+        local custom = Settings()[selectedCategory].customPools[activePool[selectedCategory]]
+        if custom then custom.enabled = not custom.enabled; Refresh() end
+    end)
+    panel.poolEnabled:SetPoint("TOPLEFT", GUTTER + 441, -125)
+    panel.poolDelete = Button(panel, "X", 35, 25, function()
+        local index = activePool[selectedCategory]
+        if index > 0 then
+            S.DeletePool(selectedCategory, index)
+            activePool[selectedCategory] = 0
+            Refresh()
+        end
+    end)
+    panel.poolDelete:SetPoint("TOPLEFT", GUTTER + 514, -125)
 
     panel.packs = {}
     for i = 1, 8 do
@@ -716,6 +919,19 @@ local function EnsurePanel()
             Refresh()
         end)
         button:SetPoint("TOPLEFT", x, y)
+        button:SetScript("OnEnter", function(self)
+            if not (self.def and GameTooltip) then return end
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(self.def.label)
+            local count = currentCounts and currentCounts[self.def.key] or 0
+            if count == 0 and self.def.key ~= "picked" and self.def.key ~= "favorite" then
+                GameTooltip:AddLine("No collected item matched the available source data. Collection metadata can be incomplete or localized differently. Add items to a custom pool above.", 0.8, 0.73, 0.52, true)
+            else
+                GameTooltip:AddLine("Click to include or exclude this set from your rated pool.", 0.7, 0.75, 0.77, true)
+            end
+            GameTooltip:Show()
+        end)
+        button:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
         panel.packs[i] = button
     end
 
@@ -726,9 +942,11 @@ local function EnsurePanel()
     local pickTitle = Font(panel, 12, GREEN)
     pickTitle:SetPoint("TOPLEFT", GUTTER, -287)
     pickTitle:SetText("COLLECTION")
+    panel.pickTitle = pickTitle
     local pickHelp = Font(panel, 10, { 0.66, 0.7, 0.72 })
     pickHelp:SetPoint("TOPLEFT", GUTTER + 104, -289)
-    pickHelp:SetText("Click a row to add it to My Picks; use +/- to rate it.")
+    pickHelp:SetText("Click a row to include it; choose a rating from 0 to 4.")
+    panel.pickHelp = pickHelp
     panel.filterButton = Button(panel, "Show: All", 150, 27, function(self)
         panel.OpenFilterMenu(self, "browse")
     end)
@@ -748,14 +966,26 @@ local function EnsurePanel()
     for i = 1, rowsPerPage do
         local row = Button(panel, "", WIDTH - GUTTER * 2, 34, function(self)
             if not self.item then return end
-            local picks = Settings()[selectedCategory].picks
-            picks[self.item.id] = not picks[self.item.id] or nil
+            local index = activePool[selectedCategory]
+            if index > 0 then
+                local custom = Settings()[selectedCategory].customPools[index]
+                if custom then S.SetPoolMember(selectedCategory, index, self.item.id, not custom.members[self.item.id]) end
+            else
+                local picks = Settings()[selectedCategory].picks
+                picks[self.item.id] = not picks[self.item.id] or nil
+            end
             Refresh()
         end)
         row:SetPoint("TOPLEFT", GUTTER, -344 - (i - 1) * 37)
         row.icon = row:CreateTexture(nil, "ARTWORK")
         row.icon:SetPoint("LEFT", 5, 0)
         row.icon:SetSize(25, 25)
+        row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        row.iconBorder = CreateFrame("Frame", nil, row, "BackdropTemplate")
+        row.iconBorder:SetPoint("CENTER", row.icon, "CENTER")
+        row.iconBorder:SetSize(27, 27)
+        Surface(row.iconBorder, 0, 0, 0)
+        row.iconBorder:SetBackdropColor(0, 0, 0, 0)
         row.text:ClearAllPoints()
         row.text:SetPoint("LEFT", 37, 0)
         row.text:SetPoint("RIGHT", -250, 0)
@@ -764,47 +994,75 @@ local function EnsurePanel()
             if row.item then panel.OpenFilterMenu(self, "group", row.item.id) end
         end)
         row.groupButton:SetPoint("RIGHT", row, "RIGHT", -118, 0)
-        row.minus = Button(row, "-", 24, 26, function()
-            local item = row.item
-            if item then S.SetRating(selectedCategory, item.id, S.GetRating(selectedCategory, item.id) - 1); Refresh() end
+        row.travelButtons = {}
+        for index, tag in ipairs(TRAVEL_TAGS) do
+            local travel = ArtButton(row, TRAVEL_ART[tag], 26, function()
+                if row.item then S.ToggleTravelTag(row.item.id, row.item, tag); Refresh() end
+            end)
+            travel:SetPoint("RIGHT", row, "RIGHT", -214 + (index - 1) * 29, 0)
+            travel:SetScript("OnEnter", function(self)
+                if GameTooltip then
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:SetText(tag .. " Travel")
+                    GameTooltip:AddLine("Click to include or exclude this mount from " .. tag .. " shortcuts.", 0.7, 0.75, 0.77, true)
+                    GameTooltip:Show()
+                end
+            end)
+            travel:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+            row.travelButtons[index] = travel
+        end
+        row.utility = Button(row, "...", 27, 26, function(self)
+            if row.item then panel.OpenFilterMenu(self, "group", row.item.id) end
         end)
-        row.minus:SetPoint("RIGHT", row, "RIGHT", -85, 0)
-        row.rating = Font(row, 11, GREEN)
-        row.rating:SetPoint("CENTER", row, "RIGHT", -57, 0)
-        row.rating:SetWidth(35)
-        row.rating:SetJustifyH("CENTER")
-        row.plus = Button(row, "+", 24, 26, function()
-            local item = row.item
-            if item then S.SetRating(selectedCategory, item.id, S.GetRating(selectedCategory, item.id) + 1); Refresh() end
-        end)
-        row.plus:SetPoint("RIGHT", row, "RIGHT", -9, 0)
+        row.utility:SetPoint("RIGHT", row, "RIGHT", -119, 0)
+        row.ratingButtons = {}
+        for rating = 0, 4 do
+            local gem = Button(row, tostring(rating), 19, 26, function()
+                if row.item then S.SetRating(selectedCategory, row.item.id, rating); Refresh() end
+            end)
+            gem:SetPoint("RIGHT", row, "RIGHT", -9 - (4 - rating) * 21, 0)
+            gem.text:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 11, "")
+            gem:SetScript("OnEnter", function(self)
+                if GameTooltip then
+                    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                    GameTooltip:SetText(rating == 0 and "Exclude From Random" or ("Rating " .. rating .. " of 4"))
+                    GameTooltip:AddLine("Higher ratings are chosen more often.", 0.7, 0.75, 0.77, true)
+                    GameTooltip:Show()
+                end
+            end)
+            gem:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+            row.ratingButtons[rating] = gem
+        end
         panel.listRows[i] = row
     end
-    panel.previous = Button(panel, "<", 26, 24, function() page = math.max(1, page - 1); Refresh() end)
+    panel.previous = ChevronButton(panel, "left", function() page = math.max(1, page - 1); Refresh() end)
     panel.previous:SetPoint("TOPLEFT", GUTTER, -606)
     panel.pageText = Font(panel, 10)
     panel.pageText:SetPoint("LEFT", panel.previous, "RIGHT", 7, 0)
-    panel.next = Button(panel, ">", 26, 24, function() page = page + 1; Refresh() end)
+    panel.next = ChevronButton(panel, "right", function() page = page + 1; Refresh() end)
     panel.next:SetPoint("LEFT", panel.pageText, "RIGHT", 8, 0)
     panel.action = Button(panel, "Random Pet", 110, 25, function() S.Summon("pet"); Refresh() end)
+    ActionVisual(panel.action, "pet")
     panel.action:SetPoint("TOPRIGHT", -GUTTER, -606)
     panel.mountAction = MakeMountButton(nil, panel)
-    panel.mountAction:SetSize(110, 25)
+    panel.mountAction:SetSize(126, 27)
     panel.mountAction:SetPoint("TOPRIGHT", -GUTTER, -606)
     Surface(panel.mountAction, 0.09, 0.105, 0.115)
     panel.mountAction.text = Font(panel.mountAction, 11)
     panel.mountAction.text:SetAllPoints()
     panel.mountAction.text:SetJustifyH("CENTER")
     panel.mountAction.text:SetText("Random Mount")
+    ActionVisual(panel.mountAction, "mount")
     panel.mountAction:Hide()
     panel.toyAction = MakeToyButton(nil, panel)
-    panel.toyAction:SetSize(110, 25)
+    panel.toyAction:SetSize(126, 27)
     panel.toyAction:SetPoint("TOPRIGHT", -GUTTER, -606)
     Surface(panel.toyAction, 0.09, 0.105, 0.115)
     panel.toyAction.text = Font(panel.toyAction, 11)
     panel.toyAction.text:SetAllPoints()
     panel.toyAction.text:SetJustifyH("CENTER")
     panel.toyAction.text:SetText("Random Toy")
+    ActionVisual(panel.toyAction, "toy")
     panel.toyAction:Hide()
 
     local bindDivider = panel:CreateTexture(nil, "ARTWORK")
@@ -815,7 +1073,8 @@ local function EnsurePanel()
     panel.hint:SetPoint("TOPLEFT", GUTTER, -644)
     panel.hint:SetWidth(WIDTH - GUTTER * 2)
     panel.hint:SetText("Groups are editable. Auto groups are suggestions from names and descriptions.")
-    panel.collectionWidgets = { panel.summary, panel.shortcutToggle, help, divider, pickTitle, pickHelp,
+    panel.collectionWidgets = { panel.summary, panel.shortcutToggle, panel.poolSelect,
+        panel.poolName, panel.poolAdd, panel.poolEnabled, panel.poolDelete, divider, pickTitle, pickHelp,
         panel.filterButton, panel.search, panel.previous, panel.pageText, panel.next, panel.action, panel.mountAction, panel.toyAction,
         bindDivider, panel.hint }
     for _, button in ipairs(panel.packs) do panel.collectionWidgets[#panel.collectionWidgets + 1] = button end
@@ -920,13 +1179,13 @@ local function EnsurePanel()
         row.remove:SetPoint("LEFT", row, "LEFT", 516, 0)
         panel.shortcutRows[i] = row
     end
-    panel.shortcutPrevious = Button(panel.keysPage, "<", 27, 25, function()
+    panel.shortcutPrevious = ChevronButton(panel.keysPage, "left", function()
         shortcutPage = math.max(1, shortcutPage - 1); Refresh()
     end)
     panel.shortcutPrevious:SetPoint("TOPLEFT", 0, -417)
     panel.shortcutPageText = Font(panel.keysPage, 10)
     panel.shortcutPageText:SetPoint("LEFT", panel.shortcutPrevious, "RIGHT", 8, 0)
-    panel.shortcutNext = Button(panel.keysPage, ">", 27, 25, function()
+    panel.shortcutNext = ChevronButton(panel.keysPage, "right", function()
         shortcutPage = shortcutPage + 1; Refresh()
     end)
     panel.shortcutNext:SetPoint("LEFT", panel.shortcutPageText, "RIGHT", 8, 0)
@@ -949,11 +1208,12 @@ local function EnsurePanel()
     panel.filterMenu:SetFrameLevel((panel:GetFrameLevel() or 0) + 20)
     panel.filterMenu:EnableMouse(true)
     panel.filterMenu.entries = {}
-    for i = 1, 20 do
+    for i = 1, 32 do
         local entry = Button(panel.filterMenu, "", 174, 23, function(self)
             local option = self.option
             local mode, category, id = panel.filterMenu.mode, panel.filterMenu.category, panel.filterMenu.id
             if mode == "browse" then browseFilter[category] = option.value or "Any"; page = 1
+            elseif mode == "pool" then activePool[category] = option.value or 0
             elseif mode == "group" and option.value == "__itemShortcut" then
                 local index = S.CreateShortcut(category)
                 if index then
@@ -985,9 +1245,17 @@ local function EnsurePanel()
     panel.OpenFilterMenu = function(anchor, mode, id)
         local category = selectedCategory
         local options = mode == "shortcut" and FilterOptions(category) or {}
-        if mode ~= "shortcut" then
+        if mode == "pool" then
+            options = { { value = 0, label = "My Picks" } }
+            for index, custom in ipairs(Settings()[category].customPools) do
+                options[#options + 1] = { value = index, label = custom.name }
+            end
+        elseif mode ~= "shortcut" then
             for _, group in ipairs(GROUPS[category]) do
-                options[#options + 1] = { value = group, label = mode == "group" and group == "Any" and "Auto-detect" or group }
+                if not (mode == "group" and category == "mount"
+                    and (group == "Ground" or group == "Sky" or group == "Aquatic")) then
+                    options[#options + 1] = { value = group, label = mode == "group" and group == "Any" and "Auto-Detect" or group }
+                end
             end
             if mode == "group" then
                 options[#options + 1] = { value = "__itemShortcut", label = "+ Shortcut for this item" }
@@ -995,14 +1263,16 @@ local function EnsurePanel()
         end
         local menu = panel.filterMenu
         menu.mode, menu.category, menu.id = mode, category, id
-        local columns = #options > 8 and 2 or 1
+        local columns = #options > 16 and 3 or #options > 8 and 2 or 1
         local rows = math.ceil(#options / columns)
         menu:SetSize(columns * 184, rows * 25 + 10)
         menu:ClearAllPoints()
         if mode == "group" then
             menu:SetPoint("BOTTOMRIGHT", anchor, "TOPRIGHT", 0, 4)
         elseif mode == "shortcut" and anchor.menuAbove then
-            menu:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, 4)
+            menu:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", -164, 4)
+        elseif mode == "shortcut" then
+            menu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", -164, -4)
         else menu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -4) end
         for i, entry in ipairs(menu.entries) do
             entry.option = options[i]
@@ -1077,7 +1347,20 @@ Refresh = function()
     currentRows = S.Collect(selectedCategory)
     currentCounts = S.Counts(selectedCategory, currentRows)
     local settings = Settings()[selectedCategory]
-    panel.summary:SetText(currentCounts.selected .. " in pool  |  " .. currentCounts.usable .. " usable now  |  "
+    local custom = settings.customPools[activePool[selectedCategory]]
+    panel.poolSelect.text:SetText(custom and custom.name or "My Picks")
+    panel.poolEnabled:SetShown(custom ~= nil)
+    panel.poolDelete:SetShown(custom ~= nil)
+    if custom then
+        panel.poolEnabled.text:SetText(custom.enabled and "Active" or "Off")
+        panel.poolEnabled:SetBackdropBorderColor(custom.enabled and GREEN[1] or 1,
+            custom.enabled and GREEN[2] or 1, custom.enabled and GREEN[3] or 1, custom.enabled and 0.7 or 0.15)
+    end
+    panel.pickTitle:SetText(custom and "CUSTOM POOL" or "COLLECTION")
+    panel.pickHelp:SetText(custom and "Click a row to add or remove it from this pool; choose a rating from 0 to 4."
+        or "Click a row to add it to My Picks; choose a rating from 0 to 4.")
+    local modeName = settings.launcherMode == "favorites" and "Favorites" or "Rated Pool"
+    panel.summary:SetText(modeName .. "  |  " .. currentCounts.selected .. " in pool  |  "
         .. #currentRows .. (selectedCategory == "toy" and " visible toys" or " collected"))
     panel.filterButton.text:SetText("Show: " .. browseFilter[selectedCategory])
     panel.searchPlaceholder:SetText("Search " .. LABELS[selectedCategory]:lower() .. "...")
@@ -1097,7 +1380,7 @@ Refresh = function()
     local filtered = {}
     local query = SafeText(search)
     for _, row in ipairs(currentRows) do
-        if (browseFilter[selectedCategory] == "Any" or S.GetGroup(selectedCategory, row) == browseFilter[selectedCategory])
+        if S.MatchesGroup(selectedCategory, row, browseFilter[selectedCategory])
             and (query == "" or SafeText(row.name):find(query, 1, true)) then
             filtered[#filtered + 1] = row
         end
@@ -1110,17 +1393,45 @@ Refresh = function()
         button:SetShown(row ~= nil)
         if row then
             button.icon:SetTexture(row.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-            button.text:SetText((settings.picks[row.id] and "|cff0dd19e[x]|r " or "[ ] ") .. row.name)
+            local quality = QUALITY[row.quality] or QUALITY[0]
+            button.iconBorder:SetBackdropBorderColor(quality[1], quality[2], quality[3], 0.92)
+            local picked = custom and custom.members[row.id] or settings.picks[row.id]
+            button.text:SetText((picked and "|cff0dd19e[x]|r " or "[ ] ") .. row.name)
             button.groupButton.text:SetText(S.GetGroup(selectedCategory, row))
-            button.rating:SetText(tostring(S.GetRating(selectedCategory, row.id)))
-            button.minus:SetEnabled(S.GetRating(selectedCategory, row.id) > 0)
-            button.plus:SetEnabled(S.GetRating(selectedCategory, row.id) < 4)
+            button.groupButton:SetShown(selectedCategory ~= "mount")
+            button.utility:SetShown(selectedCategory == "mount")
+            for index, tag in ipairs(TRAVEL_TAGS) do
+                local travel = button.travelButtons[index]
+                travel:SetShown(selectedCategory == "mount")
+                if selectedCategory == "mount" then
+                    local on = S.GetTravelTag(row.id, row, tag)
+                    travel.icon:SetDesaturated(not on)
+                    travel.icon:SetAlpha(on and 1 or 0.36)
+                    travel:SetBackdropBorderColor(on and GREEN[1] or 1, on and GREEN[2] or 1,
+                        on and GREEN[3] or 1, on and 0.7 or 0.14)
+                end
+            end
+            local chosenRating = S.GetRating(selectedCategory, row.id)
+            for rating, buttonRating in pairs(button.ratingButtons) do
+                local chosen = rating == chosenRating
+                buttonRating:SetBackdropBorderColor(chosen and GREEN[1] or 1, chosen and GREEN[2] or 1,
+                    chosen and GREEN[3] or 1, chosen and 0.75 or 0.12)
+                buttonRating.text:SetTextColor(chosen and GREEN[1] or 0.6, chosen and GREEN[2] or 0.66,
+                    chosen and GREEN[3] or 0.68)
+            end
         end
     end
     panel.previous:SetEnabled(page > 1)
     panel.next:SetEnabled(page < pages)
     panel.pageText:SetText(page .. "/" .. pages)
     panel.action.text:SetText("Random Pet")
+    local empty = {}
+    for _, def in ipairs(PACKS[selectedCategory]) do
+        if def.key ~= "all" and def.key ~= "picked" and def.key ~= "favorite"
+            and (currentCounts[def.key] or 0) == 0 then empty[#empty + 1] = def.label end
+    end
+    panel.hint:SetText(#empty > 0 and "Empty Auto Packs May Lack Source Tags. Use A Custom Pool Above."
+        or "Auto Packs Use Source Tags. Add Missing Items To A Custom Pool Above.")
 end
 
 function S.Toggle(category, mode)
@@ -1137,11 +1448,22 @@ function S.Toggle(category, mode)
     search = search or ""
     panel:Show()
     Refresh()
+    RefreshLauncher()
 end
 
 RefreshLauncher = function()
     if not launcher then return end
     launcher:SetShown(Settings().showLauncher)
+    for category, button in pairs(launcher.categoryButtons or {}) do
+        local mode = Settings()[category].launcherMode
+        local active = panel and panel:IsShown() and selectedCategory == category
+        button:SetBackdropBorderColor(active and GREEN[1] or 0.48, active and GREEN[2] or 0.5,
+            active and GREEN[3] or 0.52, active and 0.85 or 0.35)
+        if button.modeLine then
+            if mode == "favorites" then button.modeLine:SetColorTexture(1, 0.7, 0.2, 1)
+            else button.modeLine:SetColorTexture(GREEN[1], GREEN[2], GREEN[3], 1) end
+        end
+    end
 end
 
 function S.SetLauncherShown(value)
@@ -1151,53 +1473,79 @@ end
 
 local function EnsureLauncher()
     if launcher then return end
-    launcher = Button(UIParent, "", 35, 35, function(_, mouseButton)
-        local mode = mouseButton == "RightButton" and "shortcuts" or "collection"
-        if panel and panel:IsShown() and viewMode == mode then panel:Hide()
-        else S.Toggle(selectedCategory or "mount", mode) end
-    end)
-    launcher:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    launcher = CreateFrame("Frame", "WaffleHouseRandomLauncher", UIParent, "BackdropTemplate")
+    launcher:SetSize(130, 44)
+    Surface(launcher, 0.047, 0.055, 0.064)
     launcher:SetFrameStrata("MEDIUM")
     launcher:SetClampedToScreen(true)
     launcher:SetMovable(true)
+    launcher:EnableMouse(true)
     local position = Settings().position
     launcher:SetPoint("CENTER", UIParent, "CENTER", position and position.x or 240, position and position.y or -150)
-    launcher.text:Hide()
-    local tiles = {
-        { letter = "M", color = { 0.31, 0.69, 0.49 } },
-        { letter = "P", color = { 0.32, 0.64, 0.91 } },
-        { letter = "T", color = { 0.94, 0.60, 0.30 } },
-    }
-    for i, tile in ipairs(tiles) do
-        local tileX = 3 + (i - 1) * 10
-        local backing = launcher:CreateTexture(nil, "ARTWORK")
-        backing:SetColorTexture(tile.color[1], tile.color[2], tile.color[3], 0.92)
-        backing:SetPoint("TOPLEFT", tileX, -7)
-        backing:SetSize(9, 19)
-        local letter = Font(launcher, 9, { 0.03, 0.05, 0.06 })
-        letter:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 9, "OUTLINE")
-        letter:SetPoint("TOPLEFT", tileX, -10)
-        letter:SetSize(9, 14)
-        letter:SetJustifyH("CENTER")
-        letter:SetText(tile.letter)
-    end
-    launcher:SetScript("OnEnter", function(self)
-        if not GameTooltip then return end
-        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-        GameTooltip:SetText("Random Summoner")
-        GameTooltip:AddLine("M = mounts, P = pets, T = toys.", 0.7, 0.75, 0.77, true)
-        GameTooltip:AddLine("Left-click: collection  |  Right-click: shortcuts  |  Drag: move", 0.7, 0.75, 0.77, true)
-        GameTooltip:Show()
-    end)
-    launcher:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
-    launcher:RegisterForDrag("LeftButton")
-    launcher:SetScript("OnDragStart", function(self) self:StartMoving() end)
-    launcher:SetScript("OnDragStop", function(self)
+    local function StopDrag(self)
         self:StopMovingOrSizing()
         local x, y = self:GetCenter()
         local ux, uy = UIParent:GetCenter()
         Settings().position = { x = x - ux, y = y - uy }
+    end
+    launcher.categoryButtons = {}
+    for i, category in ipairs(CATEGORIES) do
+        local tile = ArtButton(launcher, CATEGORY_ART[category], 36, function(_, mouseButton)
+            if mouseButton == "RightButton" then
+                if IsShiftKeyDown and IsShiftKeyDown() then S.Toggle(category, "shortcuts")
+                else
+                    local pool = Settings()[category]
+                    pool.launcherMode = pool.launcherMode == "rated" and "favorites" or "rated"
+                    RefreshLauncher()
+                    if panel and panel:IsShown() then Refresh() end
+                end
+            else
+                S.Toggle(category, "collection")
+                RefreshLauncher()
+            end
+        end)
+        tile:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        tile:SetPoint("TOPLEFT", 13 + (i - 1) * 38, -4)
+        tile.modeLine = tile:CreateTexture(nil, "OVERLAY")
+        tile.modeLine:SetPoint("BOTTOMLEFT", 5, 2)
+        tile.modeLine:SetPoint("BOTTOMRIGHT", -5, 2)
+        tile.modeLine:SetHeight(2)
+        tile:SetScript("OnEnter", function(self)
+            if GameTooltip then
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(LABELS[category])
+                GameTooltip:AddLine("Left: Open " .. LABELS[category] .. "  |  Right: Toggle Rated/Favorites", 0.7, 0.75, 0.77)
+                GameTooltip:AddLine("Shift-Right: Shortcuts  |  Shift-Drag: Move", 0.7, 0.75, 0.77)
+                GameTooltip:AddLine("Current: " .. (Settings()[category].launcherMode == "favorites" and "Favorites" or "Rated Pool"), 0.9, 0.8, 0.3)
+                GameTooltip:Show()
+            end
+        end)
+        tile:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+        tile:RegisterForDrag("LeftButton")
+        tile:SetScript("OnDragStart", function()
+            if IsShiftKeyDown and IsShiftKeyDown() then launcher:StartMoving() end
+        end)
+        tile:SetScript("OnDragStop", function() StopDrag(launcher) end)
+        launcher.categoryButtons[category] = tile
+    end
+    local grip = Button(launcher, "", 8, 36, function() end)
+    grip.text:Hide()
+    grip:SetPoint("TOPLEFT", 2, -4)
+    grip:RegisterForDrag("LeftButton")
+    grip:SetScript("OnDragStart", function() launcher:StartMoving() end)
+    grip:SetScript("OnDragStop", function() StopDrag(launcher) end)
+    local gripMark = grip:CreateTexture(nil, "ARTWORK")
+    gripMark:SetColorTexture(0.42, 0.47, 0.49, 0.6)
+    gripMark:SetPoint("CENTER")
+    gripMark:SetSize(2, 18)
+    launcher:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText("Random Summoner")
+        GameTooltip:AddLine("Choose Mounts, Pets, or Toys. Drag the left grip to move.", 0.7, 0.75, 0.77, true)
+        GameTooltip:Show()
     end)
+    launcher:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
     RefreshLauncher()
 end
 
