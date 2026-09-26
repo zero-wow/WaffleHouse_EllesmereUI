@@ -282,8 +282,9 @@ local function PositionArtwork()
     local width, height = badge:GetWidth(), badge:GetHeight()
     local artSize = compact and height * 0.82 or width
     -- Center every creature/transition layer together inside the painted
-    -- medallion. At the owner's 252px layout this nudges them ~4px right.
-    local artX = compact and (-width / 2 + height * 0.60) or 0
+    -- medallion. At the owner's 252px layout this nudges them ~4px left of
+    -- the original position; the previous rightward adjustment was wrong.
+    local artX = compact and (-width / 2 + height * 0.52) or 0
     for _, texture in ipairs({ badge.icon, badge.blend, badge.original }) do
         texture:ClearAllPoints()
         texture:SetSize(artSize, artSize)
