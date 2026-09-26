@@ -7,6 +7,9 @@ local button
 local timerStartedAt
 local timerDuration
 local lastSelectionReason
+local usedOutfitIDs = {}
+local lastAttemptedID
+local pendingClicks = {}
 
 local function IsPlain(value)
     return not (issecretvalue and issecretvalue(value))
@@ -34,6 +37,29 @@ end
 -- The outfit C API is protected. Never call ChangeDisplayedOutfit from addon
 -- Lua (not even from OnClick or pcall). Only a hardware click on the secure
 -- outfit action below may make the change. Its index is prepared beforehand.
+local function ResolveOutfitIndex(outfits, id, listedIndex, position, entryCount)
+    -- GetOutfitsInfo already supplies the player-facing index. Avoid an extra
+    -- restricted API call for ordinary entries, which can fail from addon Lua.
+    if IsPlain(listedIndex) and type(listedIndex) == "number" and listedIndex > 0 then
+        return listedIndex
+    end
+    local lookup = outfits.GetOutfitInfoByPlayerFacingIndex
+    if type(lookup) ~= "function" then return nil end
+    local function Matches(index)
+        if not (IsPlain(index) and type(index) == "number" and index > 0) then return false end
+        local ok, info = pcall(lookup, index)
+        return ok and IsPlain(info) and type(info) == "table"
+            and IsPlain(info.outfitID) and info.outfitID == id
+    end
+    if Matches(position) then return position end
+    -- An event outfit can shift the array position. Search Blizzard's
+    -- player-facing slots before accepting any index for a saved outfit.
+    for index = 1, entryCount do
+        if index ~= position and Matches(index) then return index end
+    end
+    return nil
+end
+
 local function ChooseOutfit()
     local outfits = C_TransmogOutfitInfo
     if not (outfits and type(outfits.GetOutfitsInfo) == "function"
@@ -61,16 +87,8 @@ local function ChooseOutfit()
             local name = entry.name
             local disabled = entry.isDisabled
             local eventOutfit = entry.isEventOutfit
-            if IsPlain(id) and type(id) == "number" and id > 0
-                and not (IsPlain(index) and type(index) == "number" and index > 0)
-                and type(outfits.GetOutfitInfoByPlayerFacingIndex) == "function" then
-                -- Never assume the array position is a player-facing index: event
-                -- outfits can occupy entries without a selectable /outfit slot.
-                local lookupOK, indexed = pcall(outfits.GetOutfitInfoByPlayerFacingIndex, position)
-                if lookupOK and IsPlain(indexed) and type(indexed) == "table"
-                    and IsPlain(indexed.outfitID) and indexed.outfitID == id then
-                    index = position
-                end
+            if IsPlain(id) and type(id) == "number" and id > 0 then
+                index = ResolveOutfitIndex(outfits, id, index, position, #entries)
             end
             if IsPlain(id) and IsPlain(index) and IsPlain(name)
                 and IsPlain(disabled) and IsPlain(eventOutfit)
@@ -93,7 +111,36 @@ local function ChooseOutfit()
             end
         end
     end
-    if #candidates > 0 then return candidates[math.random(#candidates)], nil, #candidates end
+    if #candidates > 0 then
+        local remaining = {}
+        for _, candidate in ipairs(candidates) do
+            if not usedOutfitIDs[candidate.id] and candidate.id ~= lastAttemptedID then
+                remaining[#remaining + 1] = candidate
+            end
+        end
+        if #remaining == 0 then
+            if #candidates == 1 then
+                -- Reusing the sole option is unavoidable, but keep its history
+                -- so newly added outfits still take priority later.
+                remaining = candidates
+            else
+                usedOutfitIDs = {}
+                for _, candidate in ipairs(candidates) do
+                    if candidate.id ~= lastAttemptedID then remaining[#remaining + 1] = candidate end
+                end
+                if #remaining == 0 then remaining = candidates end
+            end
+        end
+        -- Refreshing the UI must not silently reroll an outfit not yet clicked.
+        if button and button.queuedOutfitID then
+            for _, candidate in ipairs(remaining) do
+                if candidate.id == button.queuedOutfitID then
+                    return candidate, nil, #candidates
+                end
+            end
+        end
+        return remaining[math.random(#remaining)], nil, #candidates
+    end
     return nil, ("No selectable saved outfit (listed %d, missing index %d, locked %d, unavailable %d).")
         :format(total, noIndex, lockedCount, disabledCount), 0
 end
@@ -214,6 +261,11 @@ local function CreateButton()
             return
         end
         local requestedID, requestedIndex = self.queuedOutfitID, self.queuedOutfitIndex
+        usedOutfitIDs[requestedID] = true
+        lastAttemptedID = requestedID
+        self.lastRequestedOutfitID = requestedID
+        local request = { id = requestedID, index = requestedIndex, confirmed = false }
+        pendingClicks[#pendingClicks + 1] = request
         self.manualProgress = true
         self.manualElapsed = 0
         self.manualFill = 0
@@ -221,13 +273,19 @@ local function CreateButton()
             and GetTime() - self.lastConfirmedAt < 0.5
             and self.lastConfirmedOutfitID == self.queuedOutfitID or false
         self.lastFrame = nil
+        C_Timer.After(0, function()
+            if not InCombatLockdown() then PrepareButton() end
+        end)
         C_Timer.After(3, function()
-            if not self.manualConfirmed and not InCombatLockdown() then
+            if not request.confirmed and not InCombatLockdown() then
                 local ok, activeID = pcall(C_TransmogOutfitInfo.GetActiveOutfitID)
                 if not ok or not IsPlain(activeID) or activeID ~= requestedID then
                     Report(("Outfit did not change (queued slot %s). Use /wh transmog status.")
                         :format(tostring(requestedIndex)))
                 end
+            end
+            for index = #pendingClicks, 1, -1 do
+                if pendingClicks[index] == request then table.remove(pendingClicks, index); break end
             end
             if not InCombatLockdown() then PrepareButton() end
         end)
@@ -327,7 +385,6 @@ function addon.ReportRandomTransmogStatus()
         Report("Outfit button is not created. Enable Show Instant Outfit Button in /wh transmog.")
         return
     end
-    if not InCombatLockdown() then PrepareButton() end
     Report(("Button %s; combat %s; action %s; candidates %d; queued %s (slot %s).")
         :format(button:IsShown() and "shown" or "hidden", InCombatLockdown() and "yes" or "no",
             tostring(button:GetAttribute("type")), button.candidateCount or 0,
@@ -364,7 +421,10 @@ events:SetScript("OnEvent", function(_, event)
             button.lastConfirmedAt = GetTime()
             local ok, activeID = pcall(C_TransmogOutfitInfo.GetActiveOutfitID)
             button.lastConfirmedOutfitID = ok and IsPlain(activeID) and activeID or nil
-            if button.manualProgress and button.lastConfirmedOutfitID == button.queuedOutfitID then
+            for _, request in ipairs(pendingClicks) do
+                if button.lastConfirmedOutfitID == request.id then request.confirmed = true end
+            end
+            if button.manualProgress and button.lastConfirmedOutfitID == button.lastRequestedOutfitID then
                 button.manualConfirmed = true
             end
         end

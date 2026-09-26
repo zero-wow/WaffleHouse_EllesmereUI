@@ -62,12 +62,13 @@ end
 
 C_TransmogOutfitInfo = {
     GetOutfitsInfo = function() return entries end,
+    GetOutfitInfoByPlayerFacingIndex = function(index) return entries[index] end,
     GetActiveOutfitID = function() return activeID end,
     IsLockedOutfit = function(id) return id == 5 or state.lockedActive == true end,
     IsTransmogEnabled = function() return not state.disabled end,
     ChangeDisplayedOutfit = function() error("protected C API must never be called by addon Lua") end,
 }
-math.random = function(count) assert(count == 1); return 1 end
+math.random = function(count) assert(count > 0); return 1 end
 
 local function advance(seconds)
     now = now + seconds
@@ -79,6 +80,7 @@ local function advance(seconds)
 end
 
 assert(loadfile(source))("WaffleHouse_EllesmereUI", addon)
+entries[2].playerFacingOutfitIndex = nil -- absent index may resolve to the live slot
 events:OnEvent("PLAYER_LOGIN")
 assert(button and button.visible and button.attributes.type == "outfit"
     and button.attributes["outfit-index"] == 2
@@ -146,6 +148,27 @@ assert(button.clickCount == 2, "click diagnostics must record physical button ca
 advance(3)
 assert(#messages > before and messages[#messages]:find("did not change", 1, true),
     "silent failed secure click must report its queued slot")
+
+entries[6] = { outfitID = 6, playerFacingOutfitIndex = 6, name = "Sixth" }
+entries[7] = { outfitID = 7, playerFacingOutfitIndex = 7, name = "Seventh" }
+events:OnEvent("TRANSMOG_OUTFITS_CHANGED")
+advance(0)
+assert(button.queuedOutfitID == 6 and button.queuedOutfitIndex == 6,
+    "use a different existing outfit with its player-facing index")
+button:PostClick("LeftButton")
+advance(0)
+assert(button.queuedOutfitID == 7, "the next click must use another saved outfit")
+activeID = 6
+events:OnEvent("TRANSMOG_DISPLAYED_OUTFIT_CHANGED")
+advance(0)
+assert(button.queuedOutfitID == 7, "outfit events must keep a valid unclicked choice stable")
+button:PostClick("LeftButton")
+advance(0)
+assert(button.queuedOutfitID == 1, "rotation must exhaust other outfits before repeating")
+local warningsBefore = #messages
+advance(3)
+assert(#messages == warningsBefore + 1 and messages[#messages]:find("queued slot 7", 1, true),
+    "a confirmed earlier click must not be reported as failed after another click")
 
 settings.randomTransmogButtonEnabled = false
 addon.RefreshRandomTransmogButton()
