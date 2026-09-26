@@ -56,11 +56,15 @@ SlashCmdList.WAFFLEHOUSEOPTIONS = function(input)
     local key = Normalize(input)
     if key == "" then key = "config" end
     if key == "help" then
-        Message("/wh config, adventure, queue, bags, automation, vendor, transmog, mount, flight, delve; section names also work. /wh transmog now readies the wardrobe button for your click.")
+        Message("/wh config, adventure, queue, bags, automation, vendor, transmog, mount, flight, delve; section names also work. /wh transmog now readies the wardrobe button; /wh transmog status diagnoses it.")
         return
     end
     if key == "transmog now" or key == "random now" then
         if addon.RandomizeTransmogNow then addon.RandomizeTransmogNow() end
+        return
+    end
+    if key == "transmog status" or key == "random status" then
+        if addon.ReportRandomTransmogStatus then addon.ReportRandomTransmogStatus() end
         return
     end
     local route = routes[key]

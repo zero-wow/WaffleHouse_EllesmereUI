@@ -6,6 +6,7 @@ local MIN_SIZE, MAX_SIZE, SIZE_STEP = 16, 160, 4
 local button
 local timerStartedAt
 local timerDuration
+local lastSelectionReason
 
 local function IsPlain(value)
     return not (issecretvalue and issecretvalue(value))
@@ -37,50 +38,80 @@ local function ChooseOutfit()
     local outfits = C_TransmogOutfitInfo
     if not (outfits and type(outfits.GetOutfitsInfo) == "function"
         and type(outfits.GetActiveOutfitID) == "function"
-        and type(outfits.IsLockedOutfit) == "function") then return end
-    if type(outfits.IsTransmogEnabled) == "function" and not outfits.IsTransmogEnabled() then return end
+        and type(outfits.IsLockedOutfit) == "function") then return nil, "Outfit API is unavailable." end
+    if type(outfits.IsTransmogEnabled) == "function" and not outfits.IsTransmogEnabled() then
+        return nil, "Transmog is disabled for this character."
+    end
     local activeID = outfits.GetActiveOutfitID()
-    if not IsPlain(activeID) then return end
+    if not IsPlain(activeID) then return nil, "Active outfit is unavailable." end
     if type(activeID) == "number" and activeID > 0 then
         local locked = outfits.IsLockedOutfit(activeID)
-        if not IsPlain(locked) or locked ~= false then return end
+        if not IsPlain(locked) then return nil, "Active outfit lock is unavailable." end
+        if locked == true then return nil, "Current outfit is locked; unlock it in Transmog to switch." end
     end
     local entries = outfits.GetOutfitsInfo()
-    if not IsPlain(entries) or type(entries) ~= "table" then return end
+    if not IsPlain(entries) or type(entries) ~= "table" then return nil, "Saved outfit list is unavailable." end
     local candidates = {}
-    for _, entry in pairs(entries) do
+    local total, noIndex, lockedCount, disabledCount = 0, 0, 0, 0
+    for position, entry in ipairs(entries) do
         if IsPlain(entry) and type(entry) == "table" then
+            total = total + 1
             local id = entry.outfitID
             local index = entry.playerFacingOutfitIndex
             local name = entry.name
             local disabled = entry.isDisabled
             local eventOutfit = entry.isEventOutfit
+            if IsPlain(id) and type(id) == "number" and id > 0
+                and not (IsPlain(index) and type(index) == "number" and index > 0)
+                and type(outfits.GetOutfitInfoByPlayerFacingIndex) == "function" then
+                -- Never assume the array position is a player-facing index: event
+                -- outfits can occupy entries without a selectable /outfit slot.
+                local lookupOK, indexed = pcall(outfits.GetOutfitInfoByPlayerFacingIndex, position)
+                if lookupOK and IsPlain(indexed) and type(indexed) == "table"
+                    and IsPlain(indexed.outfitID) and indexed.outfitID == id then
+                    index = position
+                end
+            end
             if IsPlain(id) and IsPlain(index) and IsPlain(name)
                 and IsPlain(disabled) and IsPlain(eventOutfit)
                 and type(id) == "number" and id > 0 and id ~= activeID
                 and type(index) == "number" and index > 0
                 and type(name) == "string" and name ~= ""
-                and disabled == false and eventOutfit == false then
+                and disabled ~= true and eventOutfit ~= true then
                 local locked = outfits.IsLockedOutfit(id)
-                if IsPlain(locked) and locked == false then
+                if IsPlain(locked) and locked ~= true then
                     candidates[#candidates + 1] = { id = id, index = index, name = name }
+                else
+                    lockedCount = lockedCount + 1
+                end
+            elseif IsPlain(id) and type(id) == "number" and id ~= activeID then
+                if not (IsPlain(index) and type(index) == "number" and index > 0) then
+                    noIndex = noIndex + 1
+                else
+                    disabledCount = disabledCount + 1
                 end
             end
         end
     end
-    if #candidates > 0 then return candidates[math.random(#candidates)] end
+    if #candidates > 0 then return candidates[math.random(#candidates)], nil, #candidates end
+    return nil, ("No selectable saved outfit (listed %d, missing index %d, locked %d, unavailable %d).")
+        :format(total, noIndex, lockedCount, disabledCount), 0
 end
 
 local function PrepareButton()
     if not button or InCombatLockdown() then return false end
-    local ok, chosen = pcall(ChooseOutfit)
-    if not ok then chosen = nil end
+    local ok, chosen, reason, count = pcall(ChooseOutfit)
+    if not ok then chosen, reason, count = nil, "Outfit selection failed; use /wh transmog status.", 0 end
     -- Set both attributes outside combat. A protected click reads them without
     -- running any addon code in its secure dispatch path.
     button:SetAttribute("type", chosen and "outfit" or nil)
     button:SetAttribute("outfit-index", chosen and chosen.index or nil)
     button.queuedOutfitID = chosen and chosen.id or nil
     button.queuedOutfitName = chosen and chosen.name or nil
+    button.queuedOutfitIndex = chosen and chosen.index or nil
+    button.selectionReason = reason
+    button.candidateCount = count or 0
+    lastSelectionReason = reason
     return chosen ~= nil
 end
 
@@ -146,7 +177,9 @@ local function CreateButton()
     button:SetFrameStrata("MEDIUM")
     button:SetMovable(true)
     button:SetClampedToScreen(true)
-    button:RegisterForClicks("LeftButtonUp")
+    -- Use mouse-up regardless of the global action-button CVar.
+    button:SetAttribute("useOnKeyDown", false)
+    button:RegisterForClicks("AnyDown", "AnyUp")
     button:RegisterForDrag("LeftButton")
     button:EnableMouseWheel(true)
     button:SetAttribute("action", "change")
@@ -172,8 +205,15 @@ local function CreateButton()
         button.gems[index] = gem
     end
 
-    button:HookScript("PostClick", function(self, mouseButton)
-        if mouseButton ~= "LeftButton" or IsShiftKeyDown() or not self.queuedOutfitID then return end
+    button:HookScript("PostClick", function(self, mouseButton, down)
+        if mouseButton ~= "LeftButton" or down or IsShiftKeyDown() then return end
+        self.clickCount = (self.clickCount or 0) + 1
+        self.lastClickAt = GetTime()
+        if not self.queuedOutfitID then
+            Report(self.selectionReason or "No saved outfit is ready. Use /wh transmog status.")
+            return
+        end
+        local requestedID, requestedIndex = self.queuedOutfitID, self.queuedOutfitIndex
         self.manualProgress = true
         self.manualElapsed = 0
         self.manualFill = 0
@@ -181,7 +221,14 @@ local function CreateButton()
             and GetTime() - self.lastConfirmedAt < 0.5
             and self.lastConfirmedOutfitID == self.queuedOutfitID or false
         self.lastFrame = nil
-        C_Timer.After(0, function()
+        C_Timer.After(3, function()
+            if not self.manualConfirmed and not InCombatLockdown() then
+                local ok, activeID = pcall(C_TransmogOutfitInfo.GetActiveOutfitID)
+                if not ok or not IsPlain(activeID) or activeID ~= requestedID then
+                    Report(("Outfit did not change (queued slot %s). Use /wh transmog status.")
+                        :format(tostring(requestedIndex)))
+                end
+            end
             if not InCombatLockdown() then PrepareButton() end
         end)
     end)
@@ -214,7 +261,7 @@ local function CreateButton()
         GameTooltip:SetText("Random Saved Outfit")
         GameTooltip:AddLine(self.queuedOutfitName
             and ("Click to switch to " .. self.queuedOutfitName .. ".")
-            or "No other unlocked outfit is ready.", 0.8, 0.85, 0.9)
+            or (self.selectionReason or "No other unlocked outfit is ready."), 0.8, 0.85, 0.9)
         GameTooltip:AddLine("Shift-drag to move. Ctrl+wheel to resize (16–160).", 0.6, 0.85, 1)
         local settings = Settings()
         if settings and settings.randomTransmogEnabled == true and timerStartedAt and timerDuration then
@@ -266,11 +313,28 @@ function addon.RandomizeTransmogNow()
         addon.RefreshRandomTransmogButton()
     end
     if not PrepareButton() then
-        Report("No other unlocked saved outfit is available.")
+        Report(lastSelectionReason or "No other unlocked saved outfit is available.")
         return false
     end
     Report("Random outfit is ready. Click the wardrobe button to switch.")
     return true
+end
+
+function addon.ReportRandomTransmogStatus()
+    local settings = Settings()
+    if not settings then Report("Settings are not ready."); return end
+    if not button then
+        Report("Outfit button is not created. Enable Show Instant Outfit Button in /wh transmog.")
+        return
+    end
+    if not InCombatLockdown() then PrepareButton() end
+    Report(("Button %s; combat %s; action %s; candidates %d; queued %s (slot %s).")
+        :format(button:IsShown() and "shown" or "hidden", InCombatLockdown() and "yes" or "no",
+            tostring(button:GetAttribute("type")), button.candidateCount or 0,
+            tostring(button.queuedOutfitName), tostring(button:GetAttribute("outfit-index"))))
+    Report(("Button clicks seen: %d; last outfit-change event: %s.")
+        :format(button.clickCount or 0, button.lastConfirmedOutfitID and tostring(button.lastConfirmedOutfitID) or "none"))
+    if button.selectionReason then Report(button.selectionReason) end
 end
 
 function addon.RefreshRandomTransmog()

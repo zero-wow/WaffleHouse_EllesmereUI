@@ -49,6 +49,8 @@ CreateFrame = function(kind, _, _, template)
                 assert(not state.combat, "never change secure attributes in combat")
                 self.attributes[key] = value
             end,
+            GetAttribute = function(self, key) return self.attributes[key] end,
+            IsShown = function(self) return self.visible == true end,
             HookScript = function(self, event, handler) self[event] = handler end,
             SetScript = function(self, event, handler) self[event] = handler end,
         }
@@ -82,6 +84,7 @@ assert(button and button.visible and button.attributes.type == "outfit"
     and button.attributes["outfit-index"] == 2
     and button.attributes.action == "change" and button.attributes["shift-type1"] == "",
     "must arm a non-toggling secure action for a different valid outfit")
+assert(button.attributes.useOnKeyDown == false, "secure outfit click must explicitly use mouse-up")
 assert(button.back.path:find("button-back.png", 1, true)
     and button.front.path:find("button-front.png", 1, true)
     and button.fill.path:find("button-fill-atlas.png", 1, true)
@@ -126,6 +129,23 @@ state.lockedActive = false
 events:OnEvent("TRANSMOG_OUTFITS_CHANGED")
 advance(0)
 assert(button.attributes.type == "outfit")
+
+entries[1].isDisabled, entries[1].isEventOutfit = nil, nil
+events:OnEvent("TRANSMOG_OUTFITS_CHANGED")
+advance(0)
+assert(button.attributes.type == "outfit" and button.attributes["outfit-index"] == 1,
+    "missing optional outfit flags must not disarm a usable saved outfit")
+addon.ReportRandomTransmogStatus()
+assert(messages[#messages - 1]:find("candidates 1", 1, true), "status must show armed candidate count")
+
+local before = #messages
+button:PostClick("LeftButton", true)
+assert(button.clickCount == 1, "mouse-down must not start another outfit confirmation")
+button:PostClick("LeftButton")
+assert(button.clickCount == 2, "click diagnostics must record physical button callbacks")
+advance(3)
+assert(#messages > before and messages[#messages]:find("did not change", 1, true),
+    "silent failed secure click must report its queued slot")
 
 settings.randomTransmogButtonEnabled = false
 addon.RefreshRandomTransmogButton()
