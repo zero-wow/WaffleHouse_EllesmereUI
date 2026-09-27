@@ -186,6 +186,7 @@ local function PrepareButton()
             button.queuedOutfitName = nil
             button.queuedOutfitIndex = nil
             button.selectionReason = "Waiting for the previous outfit change to finish."
+            lastSelectionReason = button.selectionReason
             return false
         end
     end
@@ -373,7 +374,9 @@ local function CreateButton()
             or (self.selectionReason or "No other unlocked outfit is ready."), 0.8, 0.85, 0.9)
         GameTooltip:AddLine("Shift-drag to move. Ctrl+wheel to resize (16–160).", 0.6, 0.85, 1)
         local settings = Settings()
-        if settings and settings.randomTransmogEnabled == true and timerStartedAt and timerDuration then
+        if self.manualProgress and not self.manualConfirmed then
+            GameTooltip:AddLine("Applying outfit; the next choice unlocks after confirmation.", 0.4, 0.9, 1)
+        elseif settings and settings.randomTransmogEnabled == true and timerStartedAt and timerDuration then
             local remaining = math.max(0, math.ceil(timerDuration - (GetTime() - timerStartedAt)))
             GameTooltip:AddLine(remaining == 0 and "Outfit change reminder ready—click to switch."
                 or ("Reminder in " .. math.ceil(remaining / 60) .. " min."), 0.4, 0.9, 1)
