@@ -484,10 +484,11 @@ local GREEN = { 0.05, 0.82, 0.62 }
 local QUALITY = { [0] = { 0.62, 0.64, 0.65 }, [1] = { 0.91, 0.94, 0.94 },
     [2] = { 0.12, 0.95, 0.22 }, [3] = { 0.12, 0.57, 1 },
     [4] = { 0.71, 0.29, 0.96 }, [5] = { 1, 0.49, 0 }, [6] = { 0.9, 0.7, 0.35 } }
-local panel, launcher, selectedCategory, currentRows, currentCounts, page, search
-local Refresh, RefreshLauncher
+local panel, launcher, selectedCategory, currentRows, currentCounts, search
+local Refresh, RefreshLauncher, RefreshVisibleRows
 local activePool = { mount = 0, pet = 0, toy = 0 }
-local rowsPerPage = 7
+local visibleRowCount, rowPitch = 7, 37
+local scrollOffset = 0
 local bindCapture, bindCaptureSlot, replaceKey
 local viewMode, shortcutPage = "collection", 1
 local browseFilter = { mount = "Any", pet = "Any", toy = "Any" }
@@ -496,6 +497,22 @@ local bindingCommands = {
     pet = "WH_RANDOM_PET",
     toy = "CLICK WaffleHouseRandomToyKeyButton:LeftButton",
 }
+
+local function ScrollCollection(delta)
+    if not panel or not panel.filteredRows then return end
+    local maximum = math.max(0, #panel.filteredRows - visibleRowCount)
+    scrollOffset = math.max(0, math.min(maximum, scrollOffset + delta))
+    if GameTooltip then GameTooltip:Hide() end
+    if panel.filterMenu and panel.filterMenu:IsShown() then panel.filterMenu:Hide() end
+    if RefreshVisibleRows then RefreshVisibleRows() end
+end
+
+local function EnableCollectionWheel(control)
+    control:EnableMouseWheel(true)
+    control:SetScript("OnMouseWheel", function(_, direction)
+        ScrollCollection(-direction * 3)
+    end)
+end
 
 local function FilterOptions(category)
     local options = { { value = nil, label = "My Pool" }, { value = "Any", label = "All Collected" } }
@@ -849,7 +866,7 @@ local function EnsurePanel()
     panel.tabs = {}
     for i, category in ipairs(CATEGORIES) do
         local tab = Button(panel, LABELS[category], 180, 30, function()
-            selectedCategory, page, search, viewMode = category, 1, "", "collection"
+            selectedCategory, scrollOffset, search, viewMode = category, 0, "", "collection"
             panel.search:SetText("")
             panel.filterMenu:Hide()
             Refresh()
@@ -908,9 +925,15 @@ local function EnsurePanel()
     panel.poolDelete:SetPoint("TOPLEFT", GUTTER + 514, -125)
 
     panel.packs = {}
+    panel.autoHeader = Font(panel, 10, GREEN)
+    panel.autoHeader:SetPoint("TOPLEFT", GUTTER, -156)
+    panel.autoHeader:SetText("Auto Sets")
+    panel.autoHelp = Font(panel, 10, { 0.57, 0.64, 0.65 })
+    panel.autoHelp:SetPoint("TOPRIGHT", -GUTTER, -156)
+    panel.autoHelp:SetText("Counts show matches in your collection")
     for i = 1, 8 do
         local x = GUTTER + ((i - 1) % 2) * 288
-        local y = -153 - math.floor((i - 1) / 2) * 29
+        local y = -175 - math.floor((i - 1) / 2) * 29
         local button = Button(panel, "", 276, 24, function(self)
             local def = self.def
             if not def then return end
@@ -919,6 +942,17 @@ local function EnsurePanel()
             Refresh()
         end)
         button:SetPoint("TOPLEFT", x, y)
+        button.text:ClearAllPoints()
+        button.text:SetPoint("LEFT", 25, 0)
+        button.text:SetPoint("RIGHT", -45, 0)
+        button.text:SetJustifyH("LEFT")
+        button.marker = button:CreateTexture(nil, "ARTWORK")
+        button.marker:SetPoint("LEFT", 9, 0)
+        button.marker:SetSize(8, 8)
+        button.count = Font(button, 10, { 0.68, 0.74, 0.75 })
+        button.count:SetPoint("RIGHT", -9, 0)
+        button.count:SetWidth(38)
+        button.count:SetJustifyH("RIGHT")
         button:SetScript("OnEnter", function(self)
             if not (self.def and GameTooltip) then return end
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -941,17 +975,17 @@ local function EnsurePanel()
     divider:SetSize(WIDTH - GUTTER * 2, 1)
     local pickTitle = Font(panel, 12, GREEN)
     pickTitle:SetPoint("TOPLEFT", GUTTER, -287)
-    pickTitle:SetText("COLLECTION")
+    pickTitle:SetText("Collection")
     panel.pickTitle = pickTitle
     local pickHelp = Font(panel, 10, { 0.66, 0.7, 0.72 })
     pickHelp:SetPoint("TOPLEFT", GUTTER + 104, -289)
-    pickHelp:SetText("Click to include. Weight: 0 off, 4 frequent.")
+    pickHelp:SetText("Click to include. Chance: 0 never, 4 most often.")
     panel.pickHelp = pickHelp
     panel.weightHeader = Font(panel, 10, GREEN)
-    panel.weightHeader:SetPoint("TOPRIGHT", -24, -288)
+    panel.weightHeader:SetPoint("TOPRIGHT", -40, -288)
     panel.weightHeader:SetWidth(110)
     panel.weightHeader:SetJustifyH("CENTER")
-    panel.weightHeader:SetText("WEIGHT")
+    panel.weightHeader:SetText("Chance")
     panel.filterButton = Button(panel, "Show: All", 150, 27, function(self)
         panel.OpenFilterMenu(self, "browse")
     end)
@@ -963,13 +997,44 @@ local function EnsurePanel()
     panel.searchPlaceholder:SetPoint("LEFT", 9, 0)
     panel.searchPlaceholder:SetText("Search collection...")
     panel.search:SetScript("OnTextChanged", function(self)
-        search, page = self:GetText() or "", 1
+        search, scrollOffset = self:GetText() or "", 0
         panel.searchPlaceholder:SetShown(search == "")
+        if panel.filterMenu then panel.filterMenu:Hide() end
         Refresh()
     end)
+    panel.scrollFrame = CreateFrame("ScrollFrame", nil, panel)
+    panel.scrollFrame:SetPoint("TOPLEFT", GUTTER, -344)
+    panel.scrollFrame:SetSize(WIDTH - GUTTER * 2 - 16, visibleRowCount * rowPitch)
+    panel.scrollContent = CreateFrame("Frame", nil, panel.scrollFrame)
+    panel.scrollContent:SetSize(WIDTH - GUTTER * 2 - 16, visibleRowCount * rowPitch)
+    panel.scrollContent:SetPoint("TOPLEFT", panel.scrollFrame, "TOPLEFT", 0, 0)
+    panel.scrollFrame:SetScrollChild(panel.scrollContent)
+    EnableCollectionWheel(panel.scrollFrame)
+    panel.scrollBar = CreateFrame("Slider", nil, panel, "BackdropTemplate")
+    panel.scrollBar:SetPoint("TOPRIGHT", -GUTTER, -344)
+    panel.scrollBar:SetSize(10, visibleRowCount * rowPitch)
+    Surface(panel.scrollBar, 0.045, 0.058, 0.063)
+    panel.scrollBar:SetOrientation("VERTICAL")
+    panel.scrollBar:SetMinMaxValues(0, 1)
+    panel.scrollBar:SetValueStep(1)
+    panel.scrollBar:SetThumbTexture("Interface\\Buttons\\WHITE8X8")
+    local thumb = panel.scrollBar:GetThumbTexture()
+    if thumb then
+        thumb:SetSize(8, 28)
+        thumb:SetVertexColor(GREEN[1], GREEN[2], GREEN[3], 0.92)
+    end
+    panel.scrollBar:SetScript("OnValueChanged", function(_, value)
+        if panel.settingScroll then return end
+        local maximum = math.max(0, #(panel.filteredRows or {}) - visibleRowCount)
+        scrollOffset = math.max(0, math.min(maximum, maximum - math.floor(value + 0.5)))
+        if GameTooltip then GameTooltip:Hide() end
+        if panel.filterMenu then panel.filterMenu:Hide() end
+        if RefreshVisibleRows then RefreshVisibleRows() end
+    end)
+    EnableCollectionWheel(panel.scrollBar)
     panel.listRows = {}
-    for i = 1, rowsPerPage do
-        local row = Button(panel, "", WIDTH - GUTTER * 2, 34, function(self)
+    for i = 1, visibleRowCount do
+        local row = Button(panel.scrollContent, "", WIDTH - GUTTER * 2 - 16, 34, function(self)
             if not self.item then return end
             local index = activePool[selectedCategory]
             if index > 0 then
@@ -981,7 +1046,8 @@ local function EnsurePanel()
             end
             Refresh()
         end)
-        row:SetPoint("TOPLEFT", GUTTER, -344 - (i - 1) * 37)
+        row:SetPoint("TOPLEFT", panel.scrollContent, "TOPLEFT", 0, -(i - 1) * rowPitch)
+        EnableCollectionWheel(row)
         row.icon = row:CreateTexture(nil, "ARTWORK")
         row.icon:SetPoint("LEFT", 5, 0)
         row.icon:SetSize(25, 25)
@@ -999,12 +1065,25 @@ local function EnsurePanel()
             if row.item then panel.OpenFilterMenu(self, "group", row.item.id) end
         end)
         row.groupButton:SetPoint("RIGHT", row, "RIGHT", -124, 0)
+        row.groupButton.rowIndex = i
+        EnableCollectionWheel(row.groupButton)
+        row.groupButton:SetScript("OnEnter", function(self)
+            if not (row.item and GameTooltip) then return end
+            local manual = Settings()[selectedCategory].groups[row.item.id] ~= nil
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText((manual and "Manually set" or "Auto-detected") .. " role: "
+                .. S.GetGroup(selectedCategory, row.item))
+            GameTooltip:AddLine("Click to change this role or return to Auto-Detect.", 0.7, 0.75, 0.77, true)
+            GameTooltip:Show()
+        end)
+        row.groupButton:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
         row.travelButtons = {}
         for index, tag in ipairs(TRAVEL_TAGS) do
             local travel = ArtButton(row, TRAVEL_ART[tag], 26, function()
                 if row.item then S.ToggleTravelTag(row.item.id, row.item, tag); Refresh() end
             end)
             travel:SetPoint("RIGHT", row, "RIGHT", -214 + (index - 1) * 29, 0)
+            EnableCollectionWheel(travel)
             travel:SetScript("OnEnter", function(self)
                 if GameTooltip then
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -1020,49 +1099,64 @@ local function EnsurePanel()
             if row.item then panel.OpenFilterMenu(self, "group", row.item.id) end
         end)
         row.utility:SetPoint("RIGHT", row, "RIGHT", -124, 0)
+        row.utility.rowIndex = i
+        EnableCollectionWheel(row.utility)
+        row.utility:SetScript("OnEnter", function(self)
+            if not (row.item and GameTooltip) then return end
+            local manual = Settings()[selectedCategory].groups[row.item.id] ~= nil
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText((manual and "Manual" or "Auto-detected") .. " mount use: "
+                .. S.GetGroup(selectedCategory, row.item))
+            GameTooltip:AddLine("Click to choose a use or return to Auto-Detect.", 0.7, 0.75, 0.77, true)
+            GameTooltip:Show()
+        end)
+        row.utility:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
         row.weight = CreateFrame("Frame", nil, row, "BackdropTemplate")
         row.weight:SetSize(110, 26)
         row.weight:SetPoint("RIGHT", row, "RIGHT", -6, 0)
         Surface(row.weight, 0.048, 0.066, 0.072)
         row.weight:SetBackdropBorderColor(1, 1, 1, 0.2)
+        EnableCollectionWheel(row.weight)
+        row.weightValue = Font(row.weight, 9, GREEN)
+        row.weightValue:SetPoint("TOP", row.weight, "TOP", 0, -2)
+        row.weightValue:SetJustifyH("CENTER")
         row.weightRail = row.weight:CreateTexture(nil, "ARTWORK")
         row.weightRail:SetColorTexture(0.38, 0.48, 0.49, 0.48)
-        row.weightRail:SetPoint("LEFT", row.weight, "LEFT", 11, 0)
+        row.weightRail:SetPoint("LEFT", row.weight, "LEFT", 11, -7)
         row.weightRail:SetSize(86, 2)
         row.weightTicks = {}
         for rating = 0, 4 do
             local tick = row.weight:CreateTexture(nil, "ARTWORK")
             tick:SetColorTexture(0.57, 0.69, 0.68, 0.48)
-            tick:SetPoint("LEFT", row.weight, "LEFT", 12 + rating * 21, 0)
-            tick:SetSize(1, 7)
+            tick:SetPoint("LEFT", row.weight, "LEFT", 12 + rating * 21, -7)
+            tick:SetSize(1, 5)
             row.weightTicks[rating] = tick
         end
         row.weightFill = row.weight:CreateTexture(nil, "OVERLAY")
         row.weightFill:SetColorTexture(GREEN[1], GREEN[2], GREEN[3], 0.86)
-        row.weightFill:SetPoint("LEFT", row.weight, "LEFT", 12, 0)
+        row.weightFill:SetPoint("LEFT", row.weight, "LEFT", 12, -7)
         row.weightFill:SetHeight(2)
         row.weightSelect = row.weight:CreateTexture(nil, "OVERLAY")
         row.weightSelect:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
         row.weightSelect:SetVertexColor(GREEN[1], GREEN[2], GREEN[3], 1)
-        row.weightSelect:SetSize(18, 18)
-        row.weightValue = Font(row.weight, 10, { 0.02, 0.13, 0.12 })
-        row.weightValue:SetPoint("CENTER", row.weightSelect, "CENTER", 0, 0)
-        row.weightValue:SetJustifyH("CENTER")
+        row.weightSelect:SetSize(10, 10)
         row.weightButtons = {}
         for rating = 0, 4 do
             local choice = CreateFrame("Button", nil, row.weight)
             choice:SetSize(21, 24)
             choice:SetPoint("LEFT", row.weight, "LEFT", 2 + rating * 21, 0)
+            EnableCollectionWheel(choice)
             choice:SetScript("OnClick", function()
                 if row.item then S.SetRating(selectedCategory, row.item.id, rating); Refresh() end
             end)
             choice:SetScript("OnEnter", function(self)
                 if GameTooltip then
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    local meaning = ({ "Off: never picked", "Low chance", "Normal chance",
-                        "High chance", "Highest chance" })[rating + 1]
-                    GameTooltip:SetText("Weight " .. rating .. " / 4")
-                    GameTooltip:AddLine(meaning .. ". Click to set this weight directly.", 0.7, 0.75, 0.77, true)
+                    local meaning = ({ "Never chosen", "Rarely chosen", "Normal chance",
+                        "Often chosen", "Most often chosen" })[rating + 1]
+                    GameTooltip:SetText("Random chance: " .. meaning)
+                    GameTooltip:AddLine("Relative weight " .. ({ 0, 1, 3, 7, 15 })[rating + 1]
+                        .. ". Click a point to set it; scroll to browse items.", 0.7, 0.75, 0.77, true)
                     GameTooltip:Show()
                 end
             end)
@@ -1071,12 +1165,10 @@ local function EnsurePanel()
         end
         panel.listRows[i] = row
     end
-    panel.previous = ChevronButton(panel, "left", function() page = math.max(1, page - 1); Refresh() end)
-    panel.previous:SetPoint("TOPLEFT", GUTTER, -606)
-    panel.pageText = Font(panel, 10)
-    panel.pageText:SetPoint("LEFT", panel.previous, "RIGHT", 7, 0)
-    panel.next = ChevronButton(panel, "right", function() page = page + 1; Refresh() end)
-    panel.next:SetPoint("LEFT", panel.pageText, "RIGHT", 8, 0)
+    panel.scrollStatus = Font(panel, 10, { 0.65, 0.73, 0.74 })
+    panel.scrollStatus:SetPoint("TOPLEFT", GUTTER, -612)
+    panel.scrollStatus:SetWidth(390)
+    panel.scrollStatus:SetText("Scroll to browse your collection")
     panel.action = Button(panel, "Random Pet", 110, 25, function() S.Summon("pet"); Refresh() end)
     ActionVisual(panel.action, "pet")
     panel.action:SetPoint("TOPRIGHT", -GUTTER, -606)
@@ -1111,8 +1203,9 @@ local function EnsurePanel()
     panel.hint:SetText("Groups are editable. Auto groups are suggestions from names and descriptions.")
     panel.collectionWidgets = { panel.summary, panel.shortcutToggle, panel.poolSelect,
         panel.poolName, panel.poolAdd, panel.poolEnabled, panel.poolDelete, divider, pickTitle, pickHelp,
-        panel.weightHeader,
-        panel.filterButton, panel.search, panel.previous, panel.pageText, panel.next, panel.action, panel.mountAction, panel.toyAction,
+        panel.weightHeader, panel.autoHeader, panel.autoHelp,
+        panel.filterButton, panel.search, panel.scrollFrame, panel.scrollBar, panel.scrollStatus,
+        panel.action, panel.mountAction, panel.toyAction,
         bindDivider, panel.hint }
     for _, button in ipairs(panel.packs) do panel.collectionWidgets[#panel.collectionWidgets + 1] = button end
     for _, button in ipairs(panel.listRows) do panel.collectionWidgets[#panel.collectionWidgets + 1] = button end
@@ -1244,12 +1337,16 @@ local function EnsurePanel()
     Surface(panel.filterMenu, 0.055, 0.073, 0.081)
     panel.filterMenu:SetFrameLevel((panel:GetFrameLevel() or 0) + 20)
     panel.filterMenu:EnableMouse(true)
+    panel.filterMenu.title = Font(panel.filterMenu, 11, GREEN)
+    panel.filterMenu.title:SetPoint("TOPLEFT", 10, -9)
+    panel.filterMenu.help = Font(panel.filterMenu, 9, { 0.67, 0.73, 0.74 })
+    panel.filterMenu.help:SetPoint("TOPLEFT", 10, -25)
     panel.filterMenu.entries = {}
     for i = 1, 32 do
         local entry = Button(panel.filterMenu, "", 174, 23, function(self)
             local option = self.option
             local mode, category, id = panel.filterMenu.mode, panel.filterMenu.category, panel.filterMenu.id
-            if mode == "browse" then browseFilter[category] = option.value or "Any"; page = 1
+            if mode == "browse" then browseFilter[category] = option.value or "Any"; scrollOffset = 0
             elseif mode == "pool" then activePool[category] = option.value or 0
             elseif mode == "group" and option.value == "__itemShortcut" then
                 local index = S.CreateShortcut(category)
@@ -1277,6 +1374,13 @@ local function EnsurePanel()
             panel.filterMenu:Hide()
             Refresh()
         end)
+        entry.text:ClearAllPoints()
+        entry.text:SetPoint("LEFT", 21, 0)
+        entry.text:SetPoint("RIGHT", -5, 0)
+        entry.text:SetJustifyH("LEFT")
+        entry.mark = entry:CreateTexture(nil, "ARTWORK")
+        entry.mark:SetPoint("LEFT", 9, 0)
+        entry.mark:SetSize(3, 13)
         panel.filterMenu.entries[i] = entry
     end
     panel.OpenFilterMenu = function(anchor, mode, id)
@@ -1295,17 +1399,27 @@ local function EnsurePanel()
                 end
             end
             if mode == "group" then
-                options[#options + 1] = { value = "__itemShortcut", label = "+ Shortcut for this item" }
+                options[#options + 1] = { value = "__itemShortcut", label = "Create Key Shortcut" }
             end
         end
         local menu = panel.filterMenu
         menu.mode, menu.category, menu.id = mode, category, id
-        local columns = #options > 16 and 3 or #options > 8 and 2 or 1
+        local columns = (mode == "group" or #options > 8) and 2 or 1
         local rows = math.ceil(#options / columns)
-        menu:SetSize(columns * 184, rows * 25 + 10)
+        menu:SetSize(columns * 184, rows * 27 + 48)
+        menu.title:SetText(mode == "group" and (category == "mount" and "Mount Use" or category == "pet" and "Pet Role" or "Toy Type")
+            or mode == "pool" and "Your Pools" or mode == "shortcut" and "Shortcut Source" or "Show Collection")
+        menu.help:SetText(mode == "group" and "Auto-Detect uses journal data. Choose a role to override it."
+            or mode == "pool" and "Choose a pool to edit."
+            or mode == "shortcut" and "Choose this key's source."
+            or "Filter by kind.")
         menu:ClearAllPoints()
         if mode == "group" then
-            menu:SetPoint("BOTTOMRIGHT", anchor, "TOPRIGHT", 0, 4)
+            if (anchor.rowIndex or 1) <= 3 then
+                menu:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -4)
+            else
+                menu:SetPoint("BOTTOMRIGHT", anchor, "TOPRIGHT", 0, 4)
+            end
         elseif mode == "shortcut" and anchor.menuAbove then
             menu:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", -164, 4)
         elseif mode == "shortcut" then
@@ -1318,8 +1432,21 @@ local function EnsurePanel()
                 local column = math.floor((i - 1) / rows)
                 local row = (i - 1) % rows
                 entry:ClearAllPoints()
-                entry:SetPoint("TOPLEFT", 5 + column * 184, -5 - row * 25)
+                entry:SetPoint("TOPLEFT", 5 + column * 184, -42 - row * 27)
+                local selected = mode == "group" and (Settings()[category].groups[id] or "Any") == options[i].value
+                    or mode == "browse" and browseFilter[category] == options[i].value
+                    or mode == "pool" and activePool[category] == options[i].value
+                    or mode == "shortcut" and Settings().shortcuts[id]
+                        and Settings().shortcuts[id].filter == options[i].value
                 entry.text:SetText(options[i].label)
+                entry.mark:SetColorTexture(selected and GREEN[1] or 0.29,
+                    selected and GREEN[2] or 0.35, selected and GREEN[3] or 0.38,
+                    selected and 1 or 0.75)
+                entry:SetBackdropColor(selected and 0.065 or 0.09,
+                    selected and 0.14 or 0.105, selected and 0.125 or 0.115, 0.98)
+                entry:SetBackdropBorderColor(selected and GREEN[1] or 1,
+                    selected and GREEN[2] or 1, selected and GREEN[3] or 1,
+                    selected and 0.76 or 0.15)
             end
         end
         menu:Show()
@@ -1327,6 +1454,75 @@ local function EnsurePanel()
     panel.filterMenu:Hide()
     panel.keysPage:Hide()
     panel:Hide()
+end
+
+RefreshVisibleRows = function()
+    if not panel or not panel.filteredRows then return end
+    local filtered = panel.filteredRows
+    local maximum = math.max(0, #filtered - visibleRowCount)
+    scrollOffset = math.max(0, math.min(maximum, scrollOffset))
+    panel.scrollContent:SetSize(WIDTH - GUTTER * 2 - 16,
+        math.max(visibleRowCount, #filtered) * rowPitch)
+    panel.scrollFrame:SetVerticalScroll(scrollOffset * rowPitch)
+    panel.settingScroll = true
+    panel.scrollBar:SetMinMaxValues(0, math.max(1, maximum))
+    panel.scrollBar:SetValue(maximum - scrollOffset)
+    panel.settingScroll = false
+    panel.scrollBar:SetShown(maximum > 0)
+    local first = #filtered > 0 and scrollOffset + 1 or 0
+    local last = math.min(#filtered, scrollOffset + visibleRowCount)
+    panel.scrollStatus:SetText(#filtered == 0 and "No matches — try another search or filter"
+        or ("Showing %d–%d of %d%s"):format(first, last, #filtered,
+            maximum > 0 and "  •  Scroll to browse" or ""))
+    local settings = Settings()[selectedCategory]
+    local custom = settings.customPools[activePool[selectedCategory]]
+    for i, button in ipairs(panel.listRows) do
+        local row = filtered[scrollOffset + i]
+        button.item = row
+        button:SetShown(row ~= nil)
+        button:ClearAllPoints()
+        button:SetPoint("TOPLEFT", panel.scrollContent, "TOPLEFT", 0,
+            -(scrollOffset + i - 1) * rowPitch)
+        if row then
+            button.icon:SetTexture(row.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
+            local quality = QUALITY[row.quality] or QUALITY[0]
+            button.iconBorder:SetBackdropBorderColor(quality[1], quality[2], quality[3], 0.92)
+            local picked = custom and custom.members[row.id] or settings.picks[row.id]
+            button.text:SetText((picked and "|cff0dd19e[x]|r " or "[ ] ") .. row.name)
+            local manual = settings.groups[row.id] ~= nil
+            local group = S.GetGroup(selectedCategory, row)
+            button.groupButton.text:SetText((manual and "Set: " or "Auto: ") .. group)
+            button.groupButton:SetBackdropBorderColor(manual and GREEN[1] or 1,
+                manual and GREEN[2] or 1, manual and GREEN[3] or 1,
+                manual and 0.55 or 0.17)
+            button.groupButton:SetShown(selectedCategory ~= "mount")
+            button.utility.text:SetText(manual and "M" or "A")
+            button.utility:SetBackdropBorderColor(manual and GREEN[1] or 1,
+                manual and GREEN[2] or 1, manual and GREEN[3] or 1,
+                manual and 0.55 or 0.17)
+            button.utility:SetShown(selectedCategory == "mount")
+            for index, tag in ipairs(TRAVEL_TAGS) do
+                local travel = button.travelButtons[index]
+                travel:SetShown(selectedCategory == "mount")
+                if selectedCategory == "mount" then
+                    local on = S.GetTravelTag(row.id, row, tag)
+                    travel.icon:SetDesaturated(not on)
+                    travel.icon:SetAlpha(on and 1 or 0.36)
+                    travel:SetBackdropBorderColor(on and GREEN[1] or 1, on and GREEN[2] or 1,
+                        on and GREEN[3] or 1, on and 0.7 or 0.14)
+                end
+            end
+            local chosenRating = S.GetRating(selectedCategory, row.id)
+            button.weightSelect:ClearAllPoints()
+            button.weightSelect:SetPoint("CENTER", button.weight, "LEFT", 12 + chosenRating * 21, -7)
+            button.weightValue:SetText(({ "Never", "Rare", "Normal", "Often", "Most Often" })[chosenRating + 1])
+            button.weightFill:SetShown(chosenRating > 0)
+            button.weightFill:SetWidth(chosenRating * 21)
+            button.weight:SetBackdropBorderColor(chosenRating > 0 and GREEN[1] or 1,
+                chosenRating > 0 and GREEN[2] or 1, chosenRating > 0 and GREEN[3] or 1,
+                chosenRating > 0 and 0.42 or 0.16)
+        end
+    end
 end
 
 Refresh = function()
@@ -1393,9 +1589,9 @@ Refresh = function()
         panel.poolEnabled:SetBackdropBorderColor(custom.enabled and GREEN[1] or 1,
             custom.enabled and GREEN[2] or 1, custom.enabled and GREEN[3] or 1, custom.enabled and 0.7 or 0.15)
     end
-    panel.pickTitle:SetText(custom and "CUSTOM POOL" or "COLLECTION")
-    panel.pickHelp:SetText(custom and "Click to add to this pool. Weight: 0 off, 4 frequent."
-        or "Click to add to My Picks. Weight: 0 off, 4 frequent.")
+    panel.pickTitle:SetText(custom and "Custom Pool" or "Collection")
+    panel.pickHelp:SetText(custom and "Click to add here. Chance: 0 never, 4 most often."
+        or "Click to add to My Picks. Chance: 0 never, 4 most often.")
     local modeName = settings.launcherMode == "favorites" and "Favorites" or "Rated Pool"
     panel.summary:SetText(modeName .. "  |  " .. currentCounts.selected .. " in pool  |  "
         .. #currentRows .. (selectedCategory == "toy" and " visible toys" or " collected"))
@@ -1407,7 +1603,15 @@ Refresh = function()
         button:SetShown(def ~= nil)
         if def then
             local count = currentCounts[def.key] or 0
-            button.text:SetText((settings.packs[def.key] and "|cff0dd19e[x]|r " or "[ ] ") .. def.label .. " (" .. count .. ")")
+            local enabled = settings.packs[def.key]
+            button.text:SetText(def.label)
+            button.marker:SetColorTexture(enabled and GREEN[1] or 0.30,
+                enabled and GREEN[2] or 0.38, enabled and GREEN[3] or 0.40, enabled and 1 or 0.8)
+            button.count:SetText(tostring(count))
+            button.count:SetTextColor(count > 0 and 0.72 or 0.52, count > 0 and 0.83 or 0.57,
+                count > 0 and 0.81 or 0.58)
+            button:SetBackdropColor(enabled and 0.065 or 0.09,
+                enabled and 0.14 or 0.105, enabled and 0.125 or 0.115, 0.98)
             button:SetBackdropBorderColor(settings.packs[def.key] and GREEN[1] or 1,
                 settings.packs[def.key] and GREEN[2] or 1,
                 settings.packs[def.key] and GREEN[3] or 1,
@@ -1422,46 +1626,8 @@ Refresh = function()
             filtered[#filtered + 1] = row
         end
     end
-    local pages = math.max(1, math.ceil(#filtered / rowsPerPage))
-    page = math.min(page, pages)
-    for i, button in ipairs(panel.listRows) do
-        local row = filtered[(page - 1) * rowsPerPage + i]
-        button.item = row
-        button:SetShown(row ~= nil)
-        if row then
-            button.icon:SetTexture(row.icon or "Interface\\Icons\\INV_Misc_QuestionMark")
-            local quality = QUALITY[row.quality] or QUALITY[0]
-            button.iconBorder:SetBackdropBorderColor(quality[1], quality[2], quality[3], 0.92)
-            local picked = custom and custom.members[row.id] or settings.picks[row.id]
-            button.text:SetText((picked and "|cff0dd19e[x]|r " or "[ ] ") .. row.name)
-            button.groupButton.text:SetText(S.GetGroup(selectedCategory, row))
-            button.groupButton:SetShown(selectedCategory ~= "mount")
-            button.utility:SetShown(selectedCategory == "mount")
-            for index, tag in ipairs(TRAVEL_TAGS) do
-                local travel = button.travelButtons[index]
-                travel:SetShown(selectedCategory == "mount")
-                if selectedCategory == "mount" then
-                    local on = S.GetTravelTag(row.id, row, tag)
-                    travel.icon:SetDesaturated(not on)
-                    travel.icon:SetAlpha(on and 1 or 0.36)
-                    travel:SetBackdropBorderColor(on and GREEN[1] or 1, on and GREEN[2] or 1,
-                        on and GREEN[3] or 1, on and 0.7 or 0.14)
-                end
-            end
-            local chosenRating = S.GetRating(selectedCategory, row.id)
-            button.weightSelect:ClearAllPoints()
-            button.weightSelect:SetPoint("CENTER", button.weight, "LEFT", 12 + chosenRating * 21, 0)
-            button.weightValue:SetText(tostring(chosenRating))
-            button.weightFill:SetShown(chosenRating > 0)
-            button.weightFill:SetWidth(chosenRating * 21)
-            button.weight:SetBackdropBorderColor(chosenRating > 0 and GREEN[1] or 1,
-                chosenRating > 0 and GREEN[2] or 1, chosenRating > 0 and GREEN[3] or 1,
-                chosenRating > 0 and 0.42 or 0.16)
-        end
-    end
-    panel.previous:SetEnabled(page > 1)
-    panel.next:SetEnabled(page < pages)
-    panel.pageText:SetText(page .. "/" .. pages)
+    panel.filteredRows = filtered
+    RefreshVisibleRows()
     panel.action.text:SetText("Random Pet")
     local empty = {}
     for _, def in ipairs(PACKS[selectedCategory]) do
@@ -1482,7 +1648,7 @@ function S.Toggle(category, mode)
     selectedCategory = LABELS[category] and category or selectedCategory or "mount"
     viewMode = mode or viewMode or "collection"
     panel.filterMenu:Hide()
-    page = page or 1
+    scrollOffset = scrollOffset or 0
     search = search or ""
     panel:Show()
     Refresh()

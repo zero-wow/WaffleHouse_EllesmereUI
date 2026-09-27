@@ -4,8 +4,8 @@ local addon = { GetSettings = function() return db end }
 local state = { combat = false, mount = nil, pet = nil, toy = nil }
 
 local newFrame
-newFrame = function(name)
-    local frame = { name = name, shown = true, scripts = {}, attributes = {} }
+newFrame = function(name, frameType)
+    local frame = { name = name, frameType = frameType, shown = true, scripts = {}, attributes = {} }
     local quiet = function() end
     setmetatable(frame, { __index = function(_, key) return quiet end })
     function frame:SetScript(event, handler) self.scripts[event] = handler end
@@ -20,6 +20,7 @@ newFrame = function(name)
     function frame:GetText() return self.text end
     function frame:SetSize(width, height) self.width, self.height = width, height end
     function frame:SetWidth(width) self.width = width end
+    function frame:SetValue(value) self.value = value end
     function frame:SetPoint(...) self.point = { ... } end
     function frame:ClearAllPoints() self.point = nil end
     function frame:GetWidth() return self.width end
@@ -34,8 +35,8 @@ DEFAULT_CHAT_FRAME = { AddMessage = function() end }
 InCombatLockdown = function() return state.combat end
 local namedFrames = {}
 local eventFrame
-CreateFrame = function(_, name)
-    local frame = newFrame(name)
+CreateFrame = function(frameType, name)
+    local frame = newFrame(name, frameType)
     if name then namedFrames[name] = frame end
     if not name and not eventFrame then eventFrame = frame end
     return frame
@@ -204,9 +205,15 @@ assert(p.launcherMode == "rated", "right-click icon must switch back to Rated mo
 popup.listRows[1].weightButtons[4].scripts.OnClick()
 assert(S.GetRating("pet", 11) == 4, "weight control must set a value directly")
 assert(popup.listRows[1].weight:GetWidth() == 110
-    and popup.listRows[1].weightValue:GetText() == "4"
+    and popup.listRows[1].weightValue:GetText() == "Most Often"
     and popup.listRows[1].weightSelect.point[4] == 96,
-    "weight needs a single movable thumb with a readable value, not five boxed labels")
+    "chance needs a named frequency and a single movable thumb")
+assert(popup.scrollFrame.frameType == "ScrollFrame" and popup.scrollBar.frameType == "Slider",
+    "the collection must be a scroll frame, not page controls")
+assert(not rawget(popup, "previous") and not rawget(popup, "next") and not rawget(popup, "pageText"),
+    "collection page arrows should be removed")
+assert(popup.packs[1].marker and popup.packs[1].count:GetText() == "3",
+    "auto sets should have clear state and a separate detected count")
 popup.poolName:SetText("Test Pool")
 popup.poolAdd.scripts.OnClick()
 assert(popup.poolSelect.text:GetText() == "Test Pool", "creating a pool should select it")
@@ -214,6 +221,24 @@ popup.listRows[1].scripts.OnClick(popup.listRows[1])
 assert(p.customPools[1].members[11], "collection click should add to the selected custom pool")
 popup.poolDelete.scripts.OnClick()
 assert(#p.customPools == 0, "custom pool delete should remove the selected pool")
+C_ToyBox.GetNumToys = function() return 14 end
+popup.tabs.toy.scripts.OnClick()
+assert(#popup.filteredRows > 7 and popup.listRows[1].item.id == 1002,
+    "toy collection should populate the first visible scroll rows")
+popup.scrollFrame.scripts.OnMouseWheel(nil, -1)
+assert(popup.listRows[1].item.id == 1005 and popup.scrollFrame.frameType == "ScrollFrame",
+    "mousewheel should recycle rows farther down the collection")
+assert(popup.scrollStatus:GetText():find("Showing 4"),
+    "scroll status should describe the visible range")
+popup.listRows[7].groupButton.scripts.OnClick(popup.listRows[7].groupButton)
+assert(popup.filterMenu.point[1] == "BOTTOMRIGHT",
+    "lower rows should open their role menu upward inside the panel")
+popup.tabs.mount.scripts.OnClick()
+popup.listRows[1].utility.scripts.OnClick(popup.listRows[1].utility)
+assert(popup.filterMenu:IsShown() and popup.filterMenu.title:GetText() == "Mount Use"
+    and popup.filterMenu.point[1] == "TOPRIGHT"
+    and popup.filterMenu.entries[1].option.label == "Auto-Detect",
+    "mount use menu should explain Auto-Detect and open below an upper row")
 assert(S.toyKeyButton and S.toyKeyButton.name == "WaffleHouseRandomToyKeyButton",
     "login should create a named secure toy key button")
 assert(S.mountKeyButton and S.mountKeyButton.name == "WaffleHouseRandomMountKeyButton",
