@@ -1,17 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 256 256">
   <defs>
-    <linearGradient id="gold" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#fff0ae"/><stop offset=".38" stop-color="#d79732"/><stop offset=".75" stop-color="#8e481a"/><stop offset="1" stop-color="#f8ca6c"/></linearGradient>
-    <radialGradient id="sapphire"><stop stop-color="#3152ad"/><stop offset="1" stop-color="#09163d"/></radialGradient>
+    <linearGradient id="metal" x1=".05" y1=".05" x2=".95" y2=".95"><stop stop-color="#fff0ba"/><stop offset=".19" stop-color="#dcad58"/><stop offset=".52" stop-color="#8d491c"/><stop offset=".77" stop-color="#dfac4b"/><stop offset="1" stop-color="#61300f"/></linearGradient>
+    <linearGradient id="rim" x1=".1" y1="0" x2=".9" y2="1"><stop stop-color="#ffdf8c"/><stop offset=".42" stop-color="#b66e2d"/><stop offset=".72" stop-color="#603114"/><stop offset="1" stop-color="#fac668"/></linearGradient>
+    <radialGradient id="stone"><stop stop-color="#3271c2"/><stop offset=".62" stop-color="#102849"/><stop offset="1" stop-color="#050c19"/></radialGradient>
   </defs>
-  <circle cx="128" cy="128" r="108" fill="none" stroke="#26100a" stroke-width="12"/>
-  <circle cx="128" cy="128" r="108" fill="none" stroke="url(#gold)" stroke-width="7"/>
-  <circle cx="128" cy="128" r="79" fill="none" stroke="#25100b" stroke-width="10"/>
-  <circle cx="128" cy="128" r="79" fill="none" stroke="url(#gold)" stroke-width="6"/>
-  <g id="gem">
-    <path d="M128 4 L143 20 L128 36 L113 20 Z" fill="#311408" stroke="#f6c76b" stroke-width="4" stroke-linejoin="round"/>
-    <path d="M128 10 L137 20 L128 30 L119 20 Z" fill="url(#sapphire)" stroke="#ba7628" stroke-width="1.5"/>
+  <circle cx="128" cy="128" r="111" fill="none" stroke="#261108" stroke-width="10"/>
+  <circle cx="128" cy="128" r="110" fill="none" stroke="url(#metal)" stroke-width="7"/>
+  <circle cx="128" cy="128" r="105" fill="none" stroke="#372016" stroke-width="2"/>
+  <circle cx="128" cy="128" r="104" fill="none" stroke="#f5cf79" stroke-opacity=".58" stroke-width="1.5"/>
+  <circle cx="128" cy="128" r="82" fill="none" stroke="#060b11" stroke-width="9"/>
+  <circle cx="128" cy="128" r="79" fill="none" stroke="url(#rim)" stroke-width="6"/>
+  <circle cx="128" cy="128" r="76" fill="none" stroke="#f2cd7b" stroke-opacity=".65" stroke-width="1.5"/>
+  <g id="setting">
+    <path d="M128 3 L142 20 L128 37 L114 20 Z" fill="#32170c" stroke="#6d340f" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M128 3 L142 20 L128 37 L114 20 Z" fill="url(#metal)" stroke="#fbe3a2" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M128 9 L137 20 L128 31 L119 20 Z" fill="url(#stone)" stroke="#432811" stroke-width="1.2"/>
   </g>
-  <use href="#gem" transform="rotate(90 128 128)"/>
-  <use href="#gem" transform="rotate(180 128 128)"/>
-  <use href="#gem" transform="rotate(270 128 128)"/>
+  <use href="#setting" transform="rotate(90 128 128)"/>
+  <use href="#setting" transform="rotate(180 128 128)"/>
+  <use href="#setting" transform="rotate(270 128 128)"/>
 </svg>

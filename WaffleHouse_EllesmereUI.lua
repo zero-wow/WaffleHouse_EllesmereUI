@@ -1252,6 +1252,7 @@ local function RegisterOptionsPage()
     if not ok then return false end
 
     optionsRegistered = true
+    if addon.InstallTabSearch then addon.InstallTabSearch() end
     if optionsRegistrationTicker then
         optionsRegistrationTicker:Cancel()
         optionsRegistrationTicker = nil

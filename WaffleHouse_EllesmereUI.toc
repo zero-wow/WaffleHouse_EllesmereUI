@@ -12,6 +12,7 @@
 ## IconTexture: Interface\AddOns\WaffleHouse_EllesmereUI\Media\icon.png
 
 WaffleHouse_EllesmereUI.lua
+WaffleHouse_TabSearch.lua
 WaffleHouse_VendorOptions.lua
 WaffleHouse_VendorStack.lua
 WaffleHouse_AutoMount.lua

@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 256 256">
   <defs>
-    <radialGradient id="disc"><stop stop-color="#254d91"/><stop offset=".58" stop-color="#10244f"/><stop offset="1" stop-color="#030a19"/></radialGradient>
-    <linearGradient id="cloth" x1="0" x2="1" y1="0" y2="1"><stop stop-color="#fff6cc"/><stop offset=".48" stop-color="#f9ca63"/><stop offset="1" stop-color="#ba6a1f"/></linearGradient>
+    <radialGradient id="well"><stop stop-color="#153860"/><stop offset=".65" stop-color="#091b34"/><stop offset="1" stop-color="#030910"/></radialGradient>
+    <linearGradient id="groove" x1="0" y1="0" x2=".8" y2="1"><stop stop-color="#02070d"/><stop offset=".35" stop-color="#123152"/><stop offset=".7" stop-color="#020711"/><stop offset="1" stop-color="#1a2631"/></linearGradient>
   </defs>
-  <circle cx="128" cy="128" r="108" fill="#050d1c"/>
-  <circle cx="128" cy="128" r="92" fill="none" stroke="#061124" stroke-width="17"/>
-  <circle cx="128" cy="128" r="79" fill="url(#disc)"/>
-  <path d="M106 72 L91 81 L69 78 L51 103 L72 119 L83 111 L83 181 L105 181 L105 193 L151 193 L151 181 L173 181 L173 111 L184 119 L205 103 L187 78 L165 81 L150 72 L141 88 L115 88 Z" fill="#24140d" stroke="#070d1b" stroke-width="9" stroke-linejoin="round"/>
-  <path d="M106 72 L91 81 L69 78 L51 103 L72 119 L83 111 L83 181 L105 181 L105 193 L151 193 L151 181 L173 181 L173 111 L184 119 L205 103 L187 78 L165 81 L150 72 L141 88 L115 88 Z" fill="url(#cloth)" stroke="#ffdc82" stroke-width="2" stroke-linejoin="round"/>
-  <path d="M106 73 L115 90 L141 90 L150 73 M84 110 L94 96 M172 110 L162 96 M104 181 L152 181" fill="none" stroke="#9b581b" stroke-width="5" stroke-linecap="round"/>
-  <path d="M115 90 L128 105 L141 90" fill="none" stroke="#fff8d7" stroke-width="4" stroke-linejoin="round"/>
+  <circle cx="128" cy="130" r="116" fill="#000000" opacity=".42"/>
+  <circle cx="128" cy="128" r="112" fill="#100c0b"/>
+  <circle cx="128" cy="128" r="106" fill="#071523"/>
+  <circle cx="128" cy="128" r="92" fill="none" stroke="#010509" stroke-width="25"/>
+  <circle cx="128" cy="128" r="92" fill="none" stroke="url(#groove)" stroke-width="21"/>
+  <circle cx="128" cy="128" r="80" fill="url(#well)"/>
+  <circle cx="128" cy="128" r="80" fill="none" stroke="#030910" stroke-width="5"/>
 </svg>

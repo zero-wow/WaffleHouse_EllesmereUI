@@ -28,6 +28,8 @@ C_Timer = { After = function(delay, callback) timers[#timers + 1] = { due = now 
 local function newTexture()
     return {
         SetAllPoints = function() end,
+        SetPoint = function() end,
+        SetSize = function(self, width, height) self.width, self.height = width, height end,
         SetTexture = function(self, value) self.path = value end,
         SetTexCoord = function(self, ...) self.texCoord = { ... } end,
         SetRotation = function(self, value) self.rotation = value end,
@@ -98,7 +100,13 @@ assert(button.attributes.useOnKeyDown == false, "secure outfit click must explic
 assert(button.back.path:find("button-back.png", 1, true)
     and button.front.path:find("button-front.png", 1, true)
     and button.fill.path:find("button-fill-atlas.png", 1, true)
-    and #button.gems == 4, "button must layer artwork, fill, bezel and gems")
+    and button.eye.path:find("button-eye.png", 1, true)
+    and #button.gems == 4, "button must layer artwork, eye, fill, bezel and gems")
+assert(button.gems[1].path:find("button-gem.png", 1, true)
+    and button.gems[2].path:find("button-gem-right.png", 1, true)
+    and button.gems[3].path:find("button-gem-bottom.png", 1, true)
+    and button.gems[4].path:find("button-gem-left.png", 1, true),
+    "progress gems must illuminate clockwise from the top")
 
 local reverseLookup = C_TransmogOutfitInfo.GetOutfitInfoByPlayerFacingIndex
 C_TransmogOutfitInfo.GetOutfitInfoByPlayerFacingIndex = function() return nil end
@@ -192,18 +200,20 @@ assert(button.queuedOutfitID == 6 and button.queuedOutfitIndex == 6,
     "use a different existing outfit with its player-facing index")
 button:PostClick("LeftButton")
 advance(0)
-assert(button.queuedOutfitID == 7, "the next click must use another saved outfit; got " .. tostring(button.queuedOutfitID))
+assert(button.attributes.type == nil and button.queuedOutfitID == nil,
+    "do not offer another secure outfit action before the client confirms the first")
 activeID = 6
 events:OnEvent("TRANSMOG_DISPLAYED_OUTFIT_CHANGED")
 advance(0)
-assert(button.queuedOutfitID == 7, "outfit events must keep a valid unclicked choice stable")
+assert(button.queuedOutfitID == 7, "confirmation must arm another saved outfit")
 button:PostClick("LeftButton")
 advance(0)
-assert(button.queuedOutfitID == 1, "rotation must exhaust other outfits before repeating")
+assert(button.attributes.type == nil, "second application also waits for confirmation")
 local warningsBefore = #messages
 advance(3)
 assert(#messages == warningsBefore + 1 and messages[#messages]:find("queued slot 7", 1, true),
     "a confirmed earlier click must not be reported as failed after another click")
+assert(button.queuedOutfitID == 1, "rotation must exhaust other outfits before repeating")
 
 entries[6], entries[7] = nil, nil
 activeID = 2

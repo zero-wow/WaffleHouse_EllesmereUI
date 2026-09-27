@@ -945,8 +945,13 @@ local function EnsurePanel()
     panel.pickTitle = pickTitle
     local pickHelp = Font(panel, 10, { 0.66, 0.7, 0.72 })
     pickHelp:SetPoint("TOPLEFT", GUTTER + 104, -289)
-    pickHelp:SetText("Click a row to include it; choose a rating from 0 to 4.")
+    pickHelp:SetText("Click to include. Weight: 0 off, 4 frequent.")
     panel.pickHelp = pickHelp
+    panel.weightHeader = Font(panel, 10, GREEN)
+    panel.weightHeader:SetPoint("TOPRIGHT", -24, -288)
+    panel.weightHeader:SetWidth(110)
+    panel.weightHeader:SetJustifyH("CENTER")
+    panel.weightHeader:SetText("WEIGHT")
     panel.filterButton = Button(panel, "Show: All", 150, 27, function(self)
         panel.OpenFilterMenu(self, "browse")
     end)
@@ -990,10 +995,10 @@ local function EnsurePanel()
         row.text:SetPoint("LEFT", 37, 0)
         row.text:SetPoint("RIGHT", -250, 0)
         row.text:SetJustifyH("LEFT")
-        row.groupButton = Button(row, "Group", 120, 26, function(self)
+        row.groupButton = Button(row, "Group", 116, 26, function(self)
             if row.item then panel.OpenFilterMenu(self, "group", row.item.id) end
         end)
-        row.groupButton:SetPoint("RIGHT", row, "RIGHT", -118, 0)
+        row.groupButton:SetPoint("RIGHT", row, "RIGHT", -124, 0)
         row.travelButtons = {}
         for index, tag in ipairs(TRAVEL_TAGS) do
             local travel = ArtButton(row, TRAVEL_ART[tag], 26, function()
@@ -1014,24 +1019,55 @@ local function EnsurePanel()
         row.utility = Button(row, "...", 27, 26, function(self)
             if row.item then panel.OpenFilterMenu(self, "group", row.item.id) end
         end)
-        row.utility:SetPoint("RIGHT", row, "RIGHT", -119, 0)
-        row.ratingButtons = {}
+        row.utility:SetPoint("RIGHT", row, "RIGHT", -124, 0)
+        row.weight = CreateFrame("Frame", nil, row, "BackdropTemplate")
+        row.weight:SetSize(110, 26)
+        row.weight:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+        Surface(row.weight, 0.048, 0.066, 0.072)
+        row.weight:SetBackdropBorderColor(1, 1, 1, 0.2)
+        row.weightRail = row.weight:CreateTexture(nil, "ARTWORK")
+        row.weightRail:SetColorTexture(0.38, 0.48, 0.49, 0.48)
+        row.weightRail:SetPoint("LEFT", row.weight, "LEFT", 11, 0)
+        row.weightRail:SetSize(86, 2)
+        row.weightTicks = {}
         for rating = 0, 4 do
-            local gem = Button(row, tostring(rating), 19, 26, function()
+            local tick = row.weight:CreateTexture(nil, "ARTWORK")
+            tick:SetColorTexture(0.57, 0.69, 0.68, 0.48)
+            tick:SetPoint("LEFT", row.weight, "LEFT", 12 + rating * 21, 0)
+            tick:SetSize(1, 7)
+            row.weightTicks[rating] = tick
+        end
+        row.weightFill = row.weight:CreateTexture(nil, "OVERLAY")
+        row.weightFill:SetColorTexture(GREEN[1], GREEN[2], GREEN[3], 0.86)
+        row.weightFill:SetPoint("LEFT", row.weight, "LEFT", 12, 0)
+        row.weightFill:SetHeight(2)
+        row.weightSelect = row.weight:CreateTexture(nil, "OVERLAY")
+        row.weightSelect:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
+        row.weightSelect:SetVertexColor(GREEN[1], GREEN[2], GREEN[3], 1)
+        row.weightSelect:SetSize(18, 18)
+        row.weightValue = Font(row.weight, 10, { 0.02, 0.13, 0.12 })
+        row.weightValue:SetPoint("CENTER", row.weightSelect, "CENTER", 0, 0)
+        row.weightValue:SetJustifyH("CENTER")
+        row.weightButtons = {}
+        for rating = 0, 4 do
+            local choice = CreateFrame("Button", nil, row.weight)
+            choice:SetSize(21, 24)
+            choice:SetPoint("LEFT", row.weight, "LEFT", 2 + rating * 21, 0)
+            choice:SetScript("OnClick", function()
                 if row.item then S.SetRating(selectedCategory, row.item.id, rating); Refresh() end
             end)
-            gem:SetPoint("RIGHT", row, "RIGHT", -9 - (4 - rating) * 21, 0)
-            gem.text:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF", 11, "")
-            gem:SetScript("OnEnter", function(self)
+            choice:SetScript("OnEnter", function(self)
                 if GameTooltip then
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-                    GameTooltip:SetText(rating == 0 and "Exclude From Random" or ("Rating " .. rating .. " of 4"))
-                    GameTooltip:AddLine("Higher ratings are chosen more often.", 0.7, 0.75, 0.77, true)
+                    local meaning = ({ "Off: never picked", "Low chance", "Normal chance",
+                        "High chance", "Highest chance" })[rating + 1]
+                    GameTooltip:SetText("Weight " .. rating .. " / 4")
+                    GameTooltip:AddLine(meaning .. ". Click to set this weight directly.", 0.7, 0.75, 0.77, true)
                     GameTooltip:Show()
                 end
             end)
-            gem:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
-            row.ratingButtons[rating] = gem
+            choice:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
+            row.weightButtons[rating] = choice
         end
         panel.listRows[i] = row
     end
@@ -1075,6 +1111,7 @@ local function EnsurePanel()
     panel.hint:SetText("Groups are editable. Auto groups are suggestions from names and descriptions.")
     panel.collectionWidgets = { panel.summary, panel.shortcutToggle, panel.poolSelect,
         panel.poolName, panel.poolAdd, panel.poolEnabled, panel.poolDelete, divider, pickTitle, pickHelp,
+        panel.weightHeader,
         panel.filterButton, panel.search, panel.previous, panel.pageText, panel.next, panel.action, panel.mountAction, panel.toyAction,
         bindDivider, panel.hint }
     for _, button in ipairs(panel.packs) do panel.collectionWidgets[#panel.collectionWidgets + 1] = button end
@@ -1357,8 +1394,8 @@ Refresh = function()
             custom.enabled and GREEN[2] or 1, custom.enabled and GREEN[3] or 1, custom.enabled and 0.7 or 0.15)
     end
     panel.pickTitle:SetText(custom and "CUSTOM POOL" or "COLLECTION")
-    panel.pickHelp:SetText(custom and "Click a row to add or remove it from this pool; choose a rating from 0 to 4."
-        or "Click a row to add it to My Picks; choose a rating from 0 to 4.")
+    panel.pickHelp:SetText(custom and "Click to add to this pool. Weight: 0 off, 4 frequent."
+        or "Click to add to My Picks. Weight: 0 off, 4 frequent.")
     local modeName = settings.launcherMode == "favorites" and "Favorites" or "Rated Pool"
     panel.summary:SetText(modeName .. "  |  " .. currentCounts.selected .. " in pool  |  "
         .. #currentRows .. (selectedCategory == "toy" and " visible toys" or " collected"))
@@ -1412,13 +1449,14 @@ Refresh = function()
                 end
             end
             local chosenRating = S.GetRating(selectedCategory, row.id)
-            for rating, buttonRating in pairs(button.ratingButtons) do
-                local chosen = rating == chosenRating
-                buttonRating:SetBackdropBorderColor(chosen and GREEN[1] or 1, chosen and GREEN[2] or 1,
-                    chosen and GREEN[3] or 1, chosen and 0.75 or 0.12)
-                buttonRating.text:SetTextColor(chosen and GREEN[1] or 0.6, chosen and GREEN[2] or 0.66,
-                    chosen and GREEN[3] or 0.68)
-            end
+            button.weightSelect:ClearAllPoints()
+            button.weightSelect:SetPoint("CENTER", button.weight, "LEFT", 12 + chosenRating * 21, 0)
+            button.weightValue:SetText(tostring(chosenRating))
+            button.weightFill:SetShown(chosenRating > 0)
+            button.weightFill:SetWidth(chosenRating * 21)
+            button.weight:SetBackdropBorderColor(chosenRating > 0 and GREEN[1] or 1,
+                chosenRating > 0 and GREEN[2] or 1, chosenRating > 0 and GREEN[3] or 1,
+                chosenRating > 0 and 0.42 or 0.16)
         end
     end
     panel.previous:SetEnabled(page > 1)

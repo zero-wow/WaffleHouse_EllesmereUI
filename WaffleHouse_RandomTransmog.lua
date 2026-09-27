@@ -176,6 +176,19 @@ end
 
 local function PrepareButton()
     if not button or InCombatLockdown() then return false end
+    for _, request in ipairs(pendingClicks) do
+        if not request.confirmed then
+            -- The client has not acknowledged the secure outfit action yet.
+            -- Do not offer a second click against stale active-outfit data.
+            button:SetAttribute("type", nil)
+            button:SetAttribute("outfit-index", nil)
+            button.queuedOutfitID = nil
+            button.queuedOutfitName = nil
+            button.queuedOutfitIndex = nil
+            button.selectionReason = "Waiting for the previous outfit change to finish."
+            return false
+        end
+    end
     local ok, chosen, reason, count = pcall(ChooseOutfit)
     if not ok then chosen, reason, count = nil, "Outfit selection failed; use /wh transmog status.", 0 end
     -- Set both attributes outside combat. A protected click reads them without
@@ -241,6 +254,7 @@ local function PositionButton(settings)
     if not button then return end
     local size = ButtonSize(settings)
     button:SetSize(size, size)
+    if button.eye then button.eye:SetSize(size * 0.70, size * 0.70) end
     button:ClearAllPoints()
     button:SetPoint("CENTER", UIParent, "CENTER",
         tonumber(settings.randomTransmogButtonX) or 260,
@@ -268,15 +282,21 @@ local function CreateButton()
     button.fill:SetAllPoints()
     button.fill:SetTexture(ART_BASE .. "button-fill-atlas.png")
     button.fill:SetAlpha(0)
-    button.front = button:CreateTexture(nil, "ARTWORK", nil, 2)
+    button.eye = button:CreateTexture(nil, "ARTWORK", nil, 2)
+    button.eye:SetPoint("CENTER")
+    button.eye:SetTexture(ART_BASE .. "button-eye.png")
+    button.front = button:CreateTexture(nil, "ARTWORK", nil, 3)
     button.front:SetAllPoints()
     button.front:SetTexture(ART_BASE .. "button-front.png")
     button.gems = {}
+    local gemTextures = { "button-gem.png", "button-gem-right.png",
+        "button-gem-bottom.png", "button-gem-left.png" }
     for index = 1, 4 do
         local gem = button:CreateTexture(nil, "OVERLAY")
         gem:SetAllPoints()
-        gem:SetTexture(ART_BASE .. "button-gem.png")
-        gem:SetRotation((index - 1) * math.pi / 2)
+        -- The atlas sweeps top → right → bottom → left. Distinct textures
+        -- keep the gem order clockwise regardless of SetRotation semantics.
+        gem:SetTexture(ART_BASE .. gemTextures[index])
         gem:SetAlpha(0)
         button.gems[index] = gem
     end

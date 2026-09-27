@@ -19,6 +19,9 @@ newFrame = function(name)
     function frame:SetText(value) self.text = value end
     function frame:GetText() return self.text end
     function frame:SetSize(width, height) self.width, self.height = width, height end
+    function frame:SetWidth(width) self.width = width end
+    function frame:SetPoint(...) self.point = { ... } end
+    function frame:ClearAllPoints() self.point = nil end
     function frame:GetWidth() return self.width end
     function frame:GetHeight() return self.height end
     function frame:GetCenter() return 500, 400 end
@@ -198,8 +201,12 @@ launcher.categoryButtons.pet.scripts.OnClick(nil, "RightButton")
 assert(p.launcherMode == "favorites", "right-click icon must switch to Favorites mode")
 launcher.categoryButtons.pet.scripts.OnClick(nil, "RightButton")
 assert(p.launcherMode == "rated", "right-click icon must switch back to Rated mode")
-popup.listRows[1].ratingButtons[4].scripts.OnClick()
-assert(S.GetRating("pet", 11) == 4, "rating buttons must set a value directly")
+popup.listRows[1].weightButtons[4].scripts.OnClick()
+assert(S.GetRating("pet", 11) == 4, "weight control must set a value directly")
+assert(popup.listRows[1].weight:GetWidth() == 110
+    and popup.listRows[1].weightValue:GetText() == "4"
+    and popup.listRows[1].weightSelect.point[4] == 96,
+    "weight needs a single movable thumb with a readable value, not five boxed labels")
 popup.poolName:SetText("Test Pool")
 popup.poolAdd.scripts.OnClick()
 assert(popup.poolSelect.text:GetText() == "Test Pool", "creating a pool should select it")
